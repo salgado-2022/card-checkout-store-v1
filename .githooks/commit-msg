@@ -1,8 +1,24 @@
 #!/usr/bin/env bash
-# Blocks commit messages that contain a forbidden word.
-WORDS=".kiro/private/forbidden-words.txt"
-[[ -f "$WORDS" ]] || exit 0
-if grep -v '^[[:space:]]*$' "$WORDS" | grep -i -F -f - "$1" >/dev/null 2>&1; then
+# Rejects commit messages that do not follow Conventional Commits or that contain a forbidden word.
+# FORBIDDEN_WORDS_FILE overrides the word list path (used by tests). A missing list skips the word check.
+set -u
+MSG_FILE="${1:?commit-msg: message file path required}"
+WORDS="${FORBIDDEN_WORDS_FILE:-.kiro/private/forbidden-words.txt}"
+CC_PATTERN='^(feat|fix|chore|docs|test|refactor|style|perf|build|ci|revert)(\([a-z0-9][a-z0-9._/-]*\))?!?: .+$'
+
+subject="$(sed -e '/^#/d' -e '/^[[:space:]]*$/d' "$MSG_FILE" | head -n 1)"
+if ! printf '%s' "$subject" | grep -Eq "$CC_PATTERN"; then
+  echo "commit-msg: the subject must follow Conventional Commits, e.g. 'feat(api): add health'" >&2
+  exit 1
+fi
+
+if [[ ! -f "$WORDS" ]]; then
+  echo "commit-msg: warning: word list $WORDS not found; forbidden-word check skipped" >&2
+  exit 0
+fi
+
+# Strip CR (files edited on Windows) and trailing spaces, then drop empty lines.
+if tr -d '\r' < "$WORDS" | sed -e 's/[[:space:]]*$//' -e '/^$/d' | grep -i -F -f - "$MSG_FILE" >/dev/null 2>&1; then
   echo "commit-msg: the message contains a forbidden word" >&2
   exit 1
 fi
