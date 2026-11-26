@@ -1,0 +1,98 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# Read-only token for every job. This workflow needs no cloud credentials.
+permissions:
+  contents: read
+
+# One run per branch or PR; a newer push cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Actions are pinned to the commit SHA of their release tag.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - run: npm ci
+        working-directory: api
+      - run: npm run lint
+        working-directory: api
+      - run: npx tsc --noEmit
+        working-directory: api
+      - run: npm run depcruise
+        working-directory: api
+      - run: npm test -- --coverage
+        working-directory: api
+      - run: npm run build
+        working-directory: api
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npm run lint
+        working-directory: web
+      - run: npx tsc --noEmit
+        working-directory: web
+      - run: npm test -- --coverage
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+
+  repo-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Full history so gitleaks scans every commit.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # gitleaks is a pinned release binary. Its tarball is verified against a sha256
+      # pinned in this file (not against a checksums file from the same release).
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: '8.18.4'
+          GITLEAKS_SHA256: 'ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d'
+        run: |
+          set -euo pipefail
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$archive" "$base/$archive"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" gitleaks
+          ./gitleaks version
+      - name: Scan full history with gitleaks
+        run: ./gitleaks detect --source . --redact --verbose
+      - name: Forbidden words check
+        run: |
+          if [ -f .kiro/private/forbidden-words.txt ]; then
+            bash scripts/check-forbidden-words.sh
+          else
+            echo "::notice::forbidden-words file is git-ignored and not present on this runner; the local git hooks enforce this check"
+          fi
