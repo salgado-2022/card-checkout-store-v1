@@ -30,6 +30,7 @@ permissions:
         - ".github/**"
         - ".kiro/plans/**"
         - ".kiro/specs/**/tasks.md"
+        - ".githooks/**"
         - "README.md"
         - "package.json"
         - "package-lock.json"
@@ -57,8 +58,10 @@ permissions:
         - "npx gitleaks*"
         - "gitleaks *"
         - "terraform fmt*"
+        - "terraform init -backend=false*"
         - "terraform validate*"
-        - "terraform plan*"
+        - "git check-ignore*"
+        - "chmod +x *"
         - "git status*"
         - "git diff*"
         - "git log*"
@@ -66,7 +69,7 @@ permissions:
     # Bloqueos duros (deny gana siempre)
     - capability: shell
       effect: deny
-      match: ["git push*", "git commit*", "git reset --hard*", "rm -rf*", "sudo *", "terraform apply*", "terraform destroy*", "aws *", "curl *"]
+      match: ["git push*", "git commit*", "git reset --hard*", "rm -rf*", "sudo *", "terraform apply*", "terraform destroy*", "terraform plan*", "aws *", "curl *"]
     - capability: fs_write
       effect: deny
       match: [".env", "**/.env", "**/.env.local", "**/.env.*.local", "**/.env.production", "**/*.pem", "**/*.key", "**/*.tfstate", "**/*.tfvars", ".kiro/agents/**", ".kiro/private/**"]

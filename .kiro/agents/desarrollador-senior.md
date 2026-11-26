@@ -26,6 +26,9 @@ permissions:
         - "scripts/**"
         - ".github/**"
         - ".kiro/specs/**/tasks.md"
+        - ".githooks/**"
+        - "docs/**"
+        - "README.md"
         - "package.json"
         - "package-lock.json"
         - "tsconfig*.json"
@@ -49,13 +52,16 @@ permissions:
         - "npx tsc*"
         - "npx depcruise*"
         - "terraform fmt*"
+        - "terraform init -backend=false*"
         - "terraform validate*"
+        - "git check-ignore*"
+        - "chmod +x *"
         - "git status*"
         - "git diff*"
         - "bash scripts/check-forbidden-words.sh*"
     - capability: shell
       effect: deny
-      match: ["git push*", "git commit*", "git reset --hard*", "rm -rf*", "sudo *", "terraform apply*", "terraform destroy*", "aws *", "curl *"]
+      match: ["git push*", "git commit*", "git reset --hard*", "rm -rf*", "sudo *", "terraform apply*", "terraform destroy*", "terraform plan*", "aws *", "curl *"]
     - capability: fs_write
       effect: deny
       match: [".env", "**/.env", "**/.env.local", "**/.env.*.local", "**/.env.production", "**/*.pem", "**/*.key", "**/*.tfstate", "**/*.tfvars", ".kiro/agents/**", ".kiro/steering/**", ".kiro/private/**"]

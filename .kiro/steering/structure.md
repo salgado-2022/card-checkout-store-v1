@@ -37,6 +37,6 @@ inclusion: always
 ## Conventions
 - Files `kebab-case.ts`; classes `PascalCase`; React components `PascalCase.tsx`; tests `*.spec.ts` (api) and `*.test.ts(x)` (web).
 - Use the generic word `payment` for anything related to the provider (`PaymentGatewayAdapter`, `PAYMENT_*`).
-- Branch per user story: `feat/HU-xx-short-slug`; chores: `chore/...`; docs: `docs/...`. Squash merge to `main`.
+- Branch per user story: `feat/HU-xx-short-slug`; chores: `chore/...`; docs: `docs/...`. Squash merge to `master` (default branch; the OIDC trust policy depends on this name).
 - Commits: Conventional Commits in English (`feat(api): ...`, `test(web): ...`).
 - Specs live in `.kiro/specs/<name>/`.
