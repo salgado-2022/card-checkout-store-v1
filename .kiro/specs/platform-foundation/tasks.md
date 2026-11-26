@@ -106,27 +106,27 @@ Conventions for every task:
     - Integration-style Jest test `web/src/tooling/bundle.test.ts`: run `vite build` into a temp `outDir` with a fixture environment (`VITE_*` placeholders and a non-`VITE_` variable such as `PAYMENT_PRIVATE_KEY_PARAM=fixture-secret`), scan every emitted file for `prv_` and for the fixture secret values, and assert none appear. Also assert the emitted asset file names contain a content hash.
     - _Requirements: 6.4, 6.7, 11.3_
 
-- [ ] 4. Continuous integration and git hooks
-  - [ ] 4.1 Create the CI workflow
+- [x] 4. Continuous integration and git hooks
+  - [x] 4.1 Create the CI workflow
     - `.github/workflows/ci.yml` as in the design: triggers `pull_request` and `push` to `master`; `permissions: contents: read`; jobs `api` (install, lint, `npx tsc --noEmit`, `npm run depcruise`, `npm test -- --coverage`, build), `web` (install, lint, `npx tsc --noEmit`, `npm test -- --coverage`, build), `repo-checks` (checkout with `fetch-depth: 0`, gitleaks as a pinned release binary run directly with `--redact`, forbidden-words script). Node 22 with `actions/setup-node` npm cache. No secrets, no AWS credentials, no `id-token`, no `environment:`, no `terraform` command.
     - Make the forbidden-words step skip with a clear notice when `.kiro/private/forbidden-words.txt` is not present on the runner.
     - `package-lock.json` files are required for `npm ci` caching (the Developer commits them).
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 6.2, 6.6, 15.6_
-  - [ ] 4.2 Test the workflow file
+  - [x] 4.2 Test the workflow file
     - Jest test `api/test/tooling/ci-workflow.spec.ts` (dev dependency `yaml`): parse `ci.yml` and assert triggers (`pull_request`, `push` to `master`), `permissions` equals `{ contents: read }`, Node 22 in every job, npm cache configured, each required step exists in `api` and `web`, the gitleaks step with `fetch-depth: 0`, and the forbidden-words step exists.
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.7, 5.8, 6.2, 6.6_
-  - [ ] 4.3 Test the existing git hooks
+  - [x] 4.3 Test the existing git hooks
     - Jest test `api/test/tooling/githooks.spec.ts` using `child_process`: run `.githooks/commit-msg` against temp message files. Valid Conventional Commit messages (`feat(api): add health`, `chore: setup`) exit 0; invalid ones (`added stuff`, empty) exit non-zero.
     - Do not execute `git commit`. Read the hooks first; if they need changes to satisfy Requirement 18.3 or 18.4, make the minimal edit.
     - _Requirements: 18.3, 18.4, 18.5_
-  - [ ] 4.4 Test that `ci.yml` has no AWS, secrets or deploy references (Property 14)
+  - [x] 4.4 Test that `ci.yml` has no AWS, secrets or deploy references (Property 14)
     - **Property 14: `ci.yml` has no AWS, secret or deploy references**
     - **Validates: Requirements 5.8, 5.9, 5.10**
     - Create a reusable scanner helper `api/test/tooling/helpers/workflow-scanner.ts` that takes workflow text and returns violations for a given rule set (rule sets are reused by task 11.4). The `ci.yml` rule set forbids `secrets.`, `aws-actions/`, `id-token`, `AWS_`, `terraform` and an `environment:` key.
     - Test `api/test/tooling/ci-isolation.spec.ts`: `fast-check` injects each forbidden token into random YAML-like text and asserts the scanner flags it; clean text passes; then the scanner runs on the real `ci.yml` and reports zero violations. Also assert via YAML parse that the only permission is `contents: read` and that no `pull_request` trigger exists in `deploy.yml` when that file is present (skip this last assertion until task 11.2 creates it, using `fs.existsSync`).
     - _Requirements: 5.8, 5.9, 5.10_
 
-- [ ] 5. Checkpoint, `chore/repo-setup`
+- [x] 5. Checkpoint, `chore/repo-setup`
   - Run in `api/` and `web/`: `npm run lint`, `npx tsc --noEmit`, `npm test -- --coverage` (confirm all four metrics are at least 80 in each project), `npm run build`; run `npm run depcruise` in `api/`; run `bash scripts/check-forbidden-words.sh` and confirm it reports no findings.
   - Ensure all tests pass, ask the user if questions arise.
   - _Requirements: 2.2, 2.5, 3.6, 4.4, 6.6_
