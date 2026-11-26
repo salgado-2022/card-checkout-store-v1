@@ -24,6 +24,10 @@ lambda.zip
 
 # Logs
 crash.log
+*.log
+# Key and certificate material
+*.pem
+*.key
 
 # OS files
 .DS_Store

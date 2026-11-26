@@ -41,66 +41,66 @@ Conventions for every task:
     - Jest test `api/test/tooling/repo-docs.spec.ts`: `README.md` mentions the four commands; `.github/pull_request_template.md` exists and mentions the user story id and the quality gates; no `pull_request_template.md` exists under `.github/workflows/`.
     - _Requirements: 18.1, 18.2_
 
-- [ ] 2. API tooling scaffold (`api/`)
-  - [ ] 2.1 Create the API package, TypeScript config and Node pin
+- [x] 2. API tooling scaffold (`api/`)
+  - [x] 2.1 Create the API package, TypeScript config and Node pin
     - `api/package.json` with `engines.node >=22 <23`, scripts `lint`, `test`, `build`, `typecheck` (`tsc --noEmit`), `depcruise` placeholder to be completed in 2.5.
     - `api/tsconfig.json` with `strict: true`; `api/.nvmrc` with `22`.
     - Add a minimal `api/src/main.ts` and `api/src/lambda.ts` placeholders (`export {}`) so entry files exist; real code comes in 7.15.
     - Run `npx tsc --noEmit` and confirm exit code 0.
     - _Requirements: 1.3, 1.5, 1.6, 1.7, 1.8, 2.5_
-  - [ ] 2.2 Configure ESLint and Prettier for the API, with the domain `no-explicit-any` rule
+  - [x] 2.2 Configure ESLint and Prettier for the API, with the domain `no-explicit-any` rule
     - `api/eslint.config.mjs` in flat config format (ESLint v10 no longer reads `.eslintrc*`; do not create one): `@eslint/js` recommended, `typescript-eslint` v8 recommended via `tseslint.config(...)`, and `eslint-plugin-prettier/recommended` so formatting violations are lint errors. A config object with `files: ['src/domain/**/*.ts']` sets `@typescript-eslint/no-explicit-any: 'error'`. Add `api/.prettierrc`.
     - Jest test `api/test/tooling/eslint-config.spec.ts` using the `ESLint` Node API with in-memory sources: (a) `any` in a `src/domain` path reports an error, (b) the same code outside domain does not report that rule, (c) a badly formatted snippet reports a Prettier error.
     - `npm run lint` must exit 0.
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
-  - [ ] 2.3 Configure Jest for the API with the 80% threshold
+  - [x] 2.3 Configure Jest for the API with the 80% threshold
     - `api/jest.config.ts` with `ts-jest` (or `@swc/jest`), `coverageThreshold.global` = 80 for statements, branches, functions and lines, `collectCoverageFrom: ['<rootDir>/src/**/*.ts']` (untested files count as 0%), and `coveragePathIgnorePatterns` limited to `main.ts`, `lambda.ts`, `*.module.ts`, `*.d.ts`, `scripts/seed.ts`.
     - Add `api/scripts/seed.ts` stub (`export {}`).
     - Add `api/test/tooling/jest-config.spec.ts` that imports the config and asserts the threshold values, `collectCoverageFrom` and the exact exclusion list (no other exclusions).
     - Install `fast-check`, `supertest`, `@types/jest`, `@types/supertest`, `yaml`.
     - _Requirements: 3.1, 3.2, 3.2a, 3.4_
-  - [ ] 2.4 Test the API coverage gate (Property 9)
+  - [x] 2.4 Test the API coverage gate (Property 9)
     - **Property 9: Coverage gate fails below threshold**
     - **Validates: Requirements 3.3**
     - Scripted integration-style Jest test (single run, not fuzzed): create a temporary fixture project that reuses the real `jest.config.ts` threshold block, with a source file whose tests cover less than 80%; run Jest through `child_process` and assert a non-zero exit code. Repeat with a fully covered fixture and assert exit code 0.
     - _Requirements: 3.3_
-  - [ ] 2.5 Add dependency-cruiser and the domain dependency rule (Property 8)
+  - [x] 2.5 Add dependency-cruiser and the domain dependency rule (Property 8)
     - **Property 8: Dependency rule rejects forbidden domain imports**
     - **Validates: Requirements 4.2, 4.3**
     - `api/.dependency-cruiser.cjs` with rules `domain-no-framework-imports` and `domain-no-outer-layers`, as in the design: `from.path` is `^src/domain`; the first rule's `to.path` is `(^|node_modules/)(@nestjs/|@aws-sdk/|express($|/)|axios($|/)|node-fetch($|/))` so it matches both resolved packages and bare module names of packages that are not installed (also cover other HTTP libraries such as `got`, `undici`, `superagent`); the second rule's `to.path` is `^src/(application|infrastructure)`. Set `options.tsPreCompilationDeps: true` and `"depcruise": "depcruise src --config .dependency-cruiser.cjs"`.
     - Jest test `api/test/tooling/dependency-rule.spec.ts`: create temp fixtures under a `src/domain` tree, one per forbidden import (parameterized with `it.each`), where the forbidden packages are deliberately NOT installed in the fixture, expecting a non-zero exit; plus clean fixtures (including a relative import inside domain) expecting zero. Also run `npm run depcruise` on the real tree and expect exit 0.
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-- [ ] 3. Web skeleton (`web/`)
-  - [ ] 3.1 Create the web package, Vite and TypeScript config
+- [x] 3. Web skeleton (`web/`)
+  - [x] 3.1 Create the web package, Vite and TypeScript config
     - `web/package.json` with `engines.node >=22 <23`, scripts `lint`, `test`, `build` (`tsc --noEmit && vite build`), `typecheck`. Dependencies: React 18, Redux Toolkit, react-redux, Vite, `@vitejs/plugin-react`. No Next.js, Angular, Vue or UI kit.
     - `web/tsconfig.json` (`strict: true`), `web/vite.config.ts` (default hashed file names, no custom `define` of non-`VITE_` variables), `web/index.html`, `web/.nvmrc` with `22`, `web/src/vite-env.d.ts` declaring `VITE_API_BASE`, `VITE_PAYMENT_API_URL`, `VITE_PAYMENT_PUBLIC_KEY`.
     - Run `npx tsc --noEmit` and confirm exit code 0.
     - _Requirements: 1.4, 1.5, 1.6, 1.7, 1.8, 11.1, 11.3, 11.6_
-  - [ ] 3.2 Configure ESLint and Prettier for the web
+  - [x] 3.2 Configure ESLint and Prettier for the web
     - `web/eslint.config.mjs` in flat config format (no `.eslintrc*`): `@eslint/js` recommended, `typescript-eslint` v8 recommended, `eslint-plugin-react-hooks` and `eslint-plugin-prettier/recommended`; `web/.prettierrc`.
     - Jest test `web/src/tooling/eslint-config.test.ts` using the `ESLint` Node API: a badly formatted snippet reports an error.
     - `npm run lint` must exit 0.
     - _Requirements: 2.1, 2.2, 2.3_
-  - [ ] 3.3 Configure Jest for the web with the 80% threshold
+  - [x] 3.3 Configure Jest for the web with the 80% threshold
     - `web/jest.config.ts` with `ts-jest` or `@swc/jest`, `jsdom` environment, React Testing Library and user-event setup (`@testing-library/jest-dom`), CSS Modules mapped with `identity-obj-proxy`, `coverageThreshold.global` = 80 for all four metrics, `collectCoverageFrom: ['<rootDir>/src/**/*.{ts,tsx}']`, `coveragePathIgnorePatterns` limited to `src/app/main.tsx`, `src/index.tsx`, `*.d.ts`.
     - Handle `import.meta.env` under Jest (for example a small `getEnv` wrapper in `shared/api` mocked in tests, or a transformer), documented in the config.
     - Test `web/src/tooling/jest-config.test.ts` asserts threshold values, `collectCoverageFrom` and the exact exclusion list.
     - _Requirements: 3.1, 3.2, 3.2a, 3.3, 3.5_
-  - [ ] 3.4 Implement the Redux store with tests
+  - [x] 3.4 Implement the Redux store with tests
     - `web/src/app/store.ts` using `configureStore` with a placeholder `app` slice (for example `{ ready: boolean }`) and exported `RootState`, `AppDispatch`, typed hooks in `web/src/app/hooks.ts`.
     - `store.test.ts`: dispatch an action and read the state through a selector.
     - _Requirements: 11.1, 11.7, 3.8_
-  - [ ] 3.5 Implement the API client with tests
+  - [x] 3.5 Implement the API client with tests
     - `web/src/shared/api/client.ts`: thin `fetch` wrapper that prefixes `VITE_API_BASE` (value `/api/v1`) and returns a typed `Result` (neverthrow) instead of throwing for HTTP failures.
     - `client.test.ts` with msw: success path builds the URL from the base, a 4xx response returns `Err` with the error body, a network failure returns `Err`.
     - _Requirements: 11.5_
-  - [ ] 3.6 Implement the placeholder page and entry point with tests
+  - [x] 3.6 Implement the placeholder page and entry point with tests
     - `web/src/app/App.tsx` plus `App.module.css`: one placeholder page with a visible Spanish title, flexbox/grid only, no fixed widths over the viewport, no horizontal overflow from 375 px.
     - `web/src/app/main.tsx` mounts `<Provider store>`; `index.html` references it.
     - `App.test.tsx` (React Testing Library): the Spanish title is rendered inside the store provider.
     - _Requirements: 11.2, 11.4, 11.7, 3.8_
-  - [ ] 3.7 Test that the web bundle contains no secret material (Property 11)
+  - [x] 3.7 Test that the web bundle contains no secret material (Property 11)
     - **Property 11: Web production bundle contains no secret material**
     - **Validates: Requirements 6.4, 6.7**
     - Integration-style Jest test `web/src/tooling/bundle.test.ts`: run `vite build` into a temp `outDir` with a fixture environment (`VITE_*` placeholders and a non-`VITE_` variable such as `PAYMENT_PRIVATE_KEY_PARAM=fixture-secret`), scan every emitted file for `prv_` and for the fixture secret values, and assert none appear. Also assert the emitted asset file names contain a content hash.
