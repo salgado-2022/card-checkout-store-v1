@@ -24,18 +24,18 @@ Conventions for every task:
 
 ### Branch `chore/repo-setup`
 
-- [ ] 1. Repository baseline
-  - [ ] 1.1 Extend `.gitignore` and create the directory skeleton
+- [x] 1. Repository baseline
+  - [x] 1.1 Extend `.gitignore` and create the directory skeleton
     - Verify and extend `.gitignore` so it lists `.env`, `*.tfstate`, `*.tfstate.*`, `.terraform/`, `.kiro/private/`, `*.tfvars`, `tfplan`, `lambda.zip`, `node_modules/`, `dist/`, `build/`, `coverage/`.
     - Create the folders with a `.gitkeep`: `api/src/domain`, `api/src/application/ports`, `api/src/application/use-cases`, `api/src/infrastructure/{http,persistence,payment,config}`, `api/scripts`, `web/src/{app,shared}`, `web/src/features/{product,checkout,transaction}`, `infra`, `docs`, `.github/workflows`.
     - Verify with `git check-ignore` that the listed patterns are ignored, including `infra/bootstrap/terraform.tfstate`, `infra/bootstrap/terraform.tfstate.backup` and `infra/bootstrap/.terraform/`.
     - _Requirements: 1.1, 1.2, 1.4, 1.10, 12.2a, 19.7_
-  - [ ] 1.2 Create `.env.example`
+  - [x] 1.2 Create `.env.example`
     - List variable names only, no secret values: backend `PAYMENT_API_URL`, `PAYMENT_PUBLIC_KEY`, `PAYMENT_PRIVATE_KEY_PARAM`, `PAYMENT_INTEGRITY_SECRET_PARAM`, `PAYMENT_EVENTS_SECRET_PARAM`, `ORIGIN_VERIFY_SECRET_PARAM`, `BASE_FEE_IN_CENTS`, `DELIVERY_FEE_IN_CENTS`, the five DynamoDB table names; frontend `VITE_API_BASE`, `VITE_PAYMENT_API_URL`, `VITE_PAYMENT_PUBLIC_KEY`.
     - Non-secret defaults allowed: `BASE_FEE_IN_CENTS=300000`, `DELIVERY_FEE_IN_CENTS=800000`, `VITE_API_BASE=/api/v1`.
     - Jest test `api/test/tooling/env-example.spec.ts`: every variable name required by Requirement 6.3 is present, and no line assigns a value that looks like a secret (`prv_`, long random strings).
     - _Requirements: 1.9, 6.1, 6.3_
-  - [ ] 1.3 Create the root `README.md` stub and the pull request template
+  - [x] 1.3 Create the root `README.md` stub and the pull request template
     - `README.md` in English: project purpose, repository layout, commands for lint, type check, tests with coverage and build.
     - `.github/pull_request_template.md` (GitHub reads it from `.github/`, never from `.github/workflows/`): asks for the user story id and evidence of the Quality_Gates.
     - Jest test `api/test/tooling/repo-docs.spec.ts`: `README.md` mentions the four commands; `.github/pull_request_template.md` exists and mentions the user story id and the quality gates; no `pull_request_template.md` exists under `.github/workflows/`.
@@ -113,7 +113,7 @@ Conventions for every task:
     - `package-lock.json` files are required for `npm ci` caching (the Developer commits them).
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.10, 6.2, 6.6, 15.6_
   - [ ] 4.2 Test the workflow file
-    - Jest test `api/test/tooling/ci-workflow.spec.ts` (dev dependency `yaml`): parse `ci.yml` and assert triggers (`pull_request`, `push` to `master`), `permissions` equals `{ contents: read }`, Node 20 in every job, npm cache configured, each required step exists in `api` and `web`, the gitleaks step with `fetch-depth: 0`, and the forbidden-words step exists.
+    - Jest test `api/test/tooling/ci-workflow.spec.ts` (dev dependency `yaml`): parse `ci.yml` and assert triggers (`pull_request`, `push` to `master`), `permissions` equals `{ contents: read }`, Node 22 in every job, npm cache configured, each required step exists in `api` and `web`, the gitleaks step with `fetch-depth: 0`, and the forbidden-words step exists.
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.7, 5.8, 6.2, 6.6_
   - [ ] 4.3 Test the existing git hooks
     - Jest test `api/test/tooling/githooks.spec.ts` using `child_process`: run `.githooks/commit-msg` against temp message files. Valid Conventional Commit messages (`feat(api): add health`, `chore: setup`) exit 0; invalid ones (`added stuff`, empty) exit non-zero.
@@ -141,7 +141,7 @@ Conventions for every task:
 
 - [ ] 7. API runtime: configuration, origin guard, health, Lambda bundle
   - [ ] 7.1 Implement `loadConfig()` returning a `Result`
-    - Install `neverthrow` and `zod`. Create `api/src/infrastructure/config/env.schema.ts` and `env.config.ts` with `AppConfig`, `ConfigError` (`kind`, `variableName` only, never a value), required variables from Requirement 7.1 plus the five table names, and defaults `BASE_FEE_IN_CENTS=300000`, `DELIVERY_FEE_IN_CENTS=800000`. `loadConfig` never throws.
+    - Install `neverthrow` and `zod`. Create `api/src/infrastructure/config/env.schema.ts` and `env.config.ts` with `AppConfig`, `ConfigError` (`kind`, `variableName` only, never a value), required variables from Requirement 7.1 plus the five table names (`DYNAMODB_TABLE_PRODUCTS`, `DYNAMODB_TABLE_CUSTOMERS`, `DYNAMODB_TABLE_TRANSACTIONS`, `DYNAMODB_TABLE_DELIVERIES`, `DYNAMODB_TABLE_IDEMPOTENCY_KEYS`), and defaults `BASE_FEE_IN_CENTS=300000`, `DELIVERY_FEE_IN_CENTS=800000`. `loadConfig` never throws.
     - Example tests `env.config.spec.ts`: one missing-variable `Err` per required variable (`it.each`), both fee defaults, an explicit fee overriding the default, a non-numeric fee returning `INVALID_ENV_VAR`.
     - _Requirements: 7.1, 7.2, 7.3, 7.4_
   - [ ] 7.2 Property test for configuration failure (Property 6)
@@ -234,7 +234,7 @@ Conventions for every task:
     - `ssm.tf`: one standard `SecureString` parameter `/<project_name>/origin/verify-secret` with the default AWS managed key (no `key_id`), value from `random_password.origin_verify` (length 48, `special = false`), which also feeds the CloudFront custom header. The three Payment_Secret_Parameters (`/<project_name>/payment/private-key`, `/<project_name>/payment/integrity-secret`, `/<project_name>/payment/events-secret`) are NOT declared as `aws_ssm_parameter` resources or data sources: a `locals` block builds only their names and ARNs (Lambda environment and IAM policy), so their values never enter the state or a plan. No real secret in any `.tf` file.
     - _Requirements: 12.11, 12.11a, 12.11b, 13.2, 6.1_
   - [ ] 9.5 Define the Lambda function, Function URL, IAM role and log group
-    - `lambda.tf`: runtime `nodejs22.x`, handler `lambda.handler`, `memory_size = 512`, `timeout = 15`, Function URL with `authorization_type = "NONE"` plus two `aws_lambda_permission` resources, `lambda:InvokeFunctionUrl` (`principal = "*"`, `function_url_auth_type = "NONE"`) and `lambda:InvokeFunction` (`principal = "*"`, `invoked_via_function_url = true` if the pinned AWS provider supports it) — without both, CloudFront gets 403 from the Function URL (Requirement 12.7a); log group `/aws/lambda/<name>` with `retention_in_days = 7`. Initial code from a tiny placeholder zip (`archive_file`) with `lifecycle { ignore_changes = [filename, source_code_hash] }` so `deploy-api` owns the real code and later applies do not revert it. Environment variables: parameter names (not values), table names, fee values, `PAYMENT_API_URL` from `var.payment_api_url`, `PAYMENT_PUBLIC_KEY` from `var.payment_public_key`.
+    - `lambda.tf`: runtime `nodejs22.x`, handler `lambda.handler`, `memory_size = 512`, `timeout = 15`, Function URL with `authorization_type = "NONE"` plus two `aws_lambda_permission` resources, `lambda:InvokeFunctionUrl` (`principal = "*"`, `function_url_auth_type = "NONE"`) and `lambda:InvokeFunction` (`principal = "*"`, `invoked_via_function_url = true` if the pinned AWS provider supports it) — without both, CloudFront gets 403 from the Function URL (Requirement 12.7a); log group `/aws/lambda/<name>` with `retention_in_days = 7`. Initial code from a tiny placeholder zip (`archive_file`) with `lifecycle { ignore_changes = [filename, source_code_hash] }` so `deploy-api` owns the real code and later applies do not revert it. Environment variables: parameter names (not values), table names (`DYNAMODB_TABLE_PRODUCTS`, `DYNAMODB_TABLE_CUSTOMERS`, `DYNAMODB_TABLE_TRANSACTIONS`, `DYNAMODB_TABLE_DELIVERIES`, `DYNAMODB_TABLE_IDEMPOTENCY_KEYS`, each set to the matching `aws_dynamodb_table` name), fee values, `PAYMENT_API_URL` from `var.payment_api_url`, `PAYMENT_PUBLIC_KEY` from `var.payment_public_key`.
     - IAM role with least privilege: `ssm:GetParameter` on the four parameter ARNs, DynamoDB item and query actions on the five table ARNs and `table/*/index/*`, `logs:CreateLogStream` and `logs:PutLogEvents` on its own log group. No wildcard resources except the index suffix.
     - _Requirements: 12.7, 12.7a, 12.12, 12.13, 10.3, 10.4, 17.4_
   - [ ] 9.6 Define the SPA rewrite CloudFront Function
