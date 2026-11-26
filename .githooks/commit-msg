@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Blocks commit messages that contain a forbidden word.
+WORDS=".kiro/private/forbidden-words.txt"
+[[ -f "$WORDS" ]] || exit 0
+if grep -v '^[[:space:]]*$' "$WORDS" | grep -i -F -f - "$1" >/dev/null 2>&1; then
+  echo "commit-msg: the message contains a forbidden word" >&2
+  exit 1
+fi

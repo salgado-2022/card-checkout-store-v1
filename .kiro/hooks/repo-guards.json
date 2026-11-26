@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Forbidden words check on save",
+      "description": "Warns if the payment provider's company name lands in any saved file. Command hook: no model call.",
+      "trigger": "PostFileSave",
+      "matcher": "\\.(ts|tsx|js|json|md|tf|yml|yaml|scss|css|html|env\\.example)$",
+      "action": {
+        "type": "command",
+        "command": "bash scripts/check-forbidden-words.sh"
+      },
+      "timeout": 30
+    }
+  ]
+}
