@@ -64,7 +64,10 @@ describe('.env.example', () => {
   it('never assigns a value that looks like a secret', () => {
     for (const { name, value } of assignments) {
       expect({ name, containsPrv: value.includes('prv_') }).toEqual({ name, containsPrv: false });
-      expect({ name, longRandom: LONG_RANDOM_VALUE.test(value) }).toEqual({ name, longRandom: false });
+      expect({ name, longRandom: LONG_RANDOM_VALUE.test(value) }).toEqual({
+        name,
+        longRandom: false,
+      });
     }
   });
 
