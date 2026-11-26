@@ -1,14 +1,32 @@
-# --- add to your .gitignore ---
+# Secrets and local environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+
+# Terraform state, variables and plans
 *.tfstate
 *.tfstate.*
 *.tfvars
+*.tfvars.json
+*.tfplan
+tfplan
 .terraform/
+
+# Private project files
 .kiro/private/
+
+# Dependencies and build output
 node_modules/
 coverage/
 dist/
+build/
+lambda.zip
+
+# Logs
+crash.log
+
+# OS files
 .DS_Store
+
+# Local guide
 GUIA-KIRO-PRUEBA.md
