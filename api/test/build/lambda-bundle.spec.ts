@@ -96,6 +96,7 @@ describe('Lambda bundle output (task 7.16)', () => {
 
 interface Invocation {
   statusCode: number;
+  headers: Record<string, string>;
   body: string;
   ssmCallsSoFar: number;
 }
@@ -183,7 +184,7 @@ const events = [
 (async () => {
   for (const event of events) {
     const result = await handler(event, { callbackWaitsForEmptyEventLoop: false });
-    process.stdout.write('RESULT ' + JSON.stringify({ statusCode: result.statusCode, body: result.body }) + '\\n');
+    process.stdout.write('RESULT ' + JSON.stringify({ statusCode: result.statusCode, headers: result.headers || {}, body: result.body }) + '\\n');
   }
 })().catch((error) => {
   process.stderr.write(String(error && error.message ? error.message : error));
@@ -269,6 +270,12 @@ describe('Bundled boot test (Requirement 10.1a)', () => {
     expect(invocations[0].ssmCallsSoFar).toBe(1);
   });
 
+  it('sends Cache-Control: no-store and no ETag on every response', () => {
+    for (const invocation of invocations) {
+      expect(invocation.headers['cache-control']).toBe('no-store');
+      expect(invocation.headers['etag']).toBeUndefined();
+    }
+  });
   it('does not call SSM again on the second invocation', () => {
     expect(invocations[1].statusCode).toBe(200);
     expect(invocations[1].ssmCallsSoFar).toBe(1);

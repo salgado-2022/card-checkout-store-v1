@@ -8,6 +8,8 @@ import type { OriginSecretSource } from '../config/origin-secret.provider';
 import { AppModule } from './app.module';
 import { ResultExceptionFilter } from './filters/result-exception.filter';
 import { JsonLogger } from './logging/json-logger';
+import { preserveBodyParseFailure } from './middleware/body-parser-error.middleware';
+import { noStoreMiddleware } from './middleware/no-store.middleware';
 import { OriginGuardMiddleware } from './middleware/origin-guard.middleware';
 import { RequestIdMiddleware, type RequestWithId } from './middleware/request-id.middleware';
 import { RequestLoggerMiddleware } from './middleware/request-logger.middleware';
@@ -35,6 +37,7 @@ export async function createApp(deps: CreateAppDeps): Promise<INestApplication> 
   const requestId = app.get(RequestIdMiddleware);
   const requestLogger = app.get(RequestLoggerMiddleware);
   const originGuard = app.get(OriginGuardMiddleware);
+  app.use(noStoreMiddleware);
   app.use((req: RequestWithId, res: ServerResponse, next: () => void) =>
     requestId.use(req, res, next),
   );
@@ -45,7 +48,12 @@ export async function createApp(deps: CreateAppDeps): Promise<INestApplication> 
     originGuard.use(req, res, next),
   );
 
+  // Registered here (not left to Nest's default) so the error handler can sit right after it.
+  // Its default 100 kb limit is what produces `entity.too.large`.
+  app.useBodyParser('json');
+  app.use(preserveBodyParseFailure);
   app.disable('x-powered-by');
+  app.set('etag', false);
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalFilters(new ResultExceptionFilter(logger));
   await app.init();

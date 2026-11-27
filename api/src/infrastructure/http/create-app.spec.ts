@@ -216,6 +216,70 @@ describe('createApp', () => {
     });
   });
 
+  it('sets Cache-Control: no-store on 200, 403, 404 and 400 responses', async () => {
+    const ok200 = await request(server()).get(HEALTH).set('X-Origin-Verify', SECRET);
+    const denied = await request(server()).get(HEALTH);
+    const wrong = await request(server()).get(HEALTH).set('X-Origin-Verify', 'wrong-value');
+    const notFound = await request(server()).get('/api/v1/unknown').set('X-Origin-Verify', SECRET);
+    const malformed = await request(server())
+      .post('/api/v1/unknown')
+      .set('X-Origin-Verify', SECRET)
+      .set('Content-Type', 'application/json')
+      .send('{"a":');
+    const statuses = [ok200, denied, wrong, notFound, malformed].map((response) => response.status);
+    expect(statuses).toEqual([200, 403, 403, 404, 400]);
+    for (const response of [ok200, denied, wrong, notFound, malformed]) {
+      expect(response.headers['cache-control']).toBe('no-store');
+    }
+  });
+  it('does not send an ETag and ignores If-None-Match', async () => {
+    const first = await request(server()).get(HEALTH).set('X-Origin-Verify', SECRET);
+    expect(first.headers['etag']).toBeUndefined();
+    const second = await request(server())
+      .get(HEALTH)
+      .set('X-Origin-Verify', SECRET)
+      .set('If-None-Match', '"abc"');
+    expect(second.status).toBe(200);
+  });
+  it('answers 400 VALIDATION_ERROR with a fixed message for a malformed JSON body', async () => {
+    lines.length = 0;
+    const response = await request(server())
+      .post('/api/v1/unknown')
+      .set('X-Origin-Verify', SECRET)
+      .set('Content-Type', 'application/json')
+      .send('{"card":"hunter2-leak"');
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+      message: 'Malformed JSON body.',
+      details: [],
+    });
+    expect(response.text).not.toContain('hunter2-leak');
+    expect(lines.join('')).not.toContain('hunter2-leak');
+    expect(response.headers['x-request-id']).toEqual(expect.any(String));
+  });
+  it('answers 413 PAYLOAD_TOO_LARGE with a fixed message when the body exceeds the limit', async () => {
+    lines.length = 0;
+    const response = await request(server())
+      .post('/api/v1/unknown')
+      .set('X-Origin-Verify', SECRET)
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ filler: 'x'.repeat(200_000) }));
+    expect(response.status).toBe(413);
+    expect(response.body).toEqual({
+      statusCode: 413,
+      code: 'PAYLOAD_TOO_LARGE',
+      message: 'Request body too large.',
+      details: [],
+    });
+    expect(response.headers['cache-control']).toBe('no-store');
+    const rejected = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((entry) => entry.message === 'Request rejected');
+    expect(rejected).toMatchObject({ statusCode: 413, code: 'PAYLOAD_TOO_LARGE' });
+    expect(rejected).not.toHaveProperty('errorMessage');
+  });
   it('fails closed with 403 when the origin secret was never loaded', async () => {
     const silent = silentLogger();
     const notLoaded: OriginSecretError = {
