@@ -158,7 +158,7 @@ const makeEvent = (headers) => ({
   requestContext: {
     accountId: '000000000000',
     apiId: 'function-url',
-    domainName: 'example.lambda-url.us-east-1.on.aws',
+    domainName: 'example.lambda-url.us-east-2.on.aws',
     domainPrefix: 'example',
     http: {
       method: 'GET',
@@ -195,7 +195,7 @@ const events = [
 function runBundledInvocations(stub: SsmStub): Promise<Invocation[]> {
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
-    AWS_REGION: 'us-east-1',
+    AWS_REGION: 'us-east-2',
     AWS_ENDPOINT_URL_SSM: stub.endpoint,
     AWS_ACCESS_KEY_ID: 'AKIAFAKEFAKEFAKEFAKE',
     AWS_SECRET_ACCESS_KEY: 'fake-secret-access-key-for-tests',

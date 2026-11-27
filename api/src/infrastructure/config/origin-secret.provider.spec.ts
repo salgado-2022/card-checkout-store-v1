@@ -136,7 +136,7 @@ describe('OriginSecretProvider', () => {
   });
 
   it('uses an injected SSM client when provided', async () => {
-    const client = new SSMClient({ region: 'us-east-1' });
+    const client = new SSMClient({ region: 'us-east-2' });
     ssm.on(GetParameterCommand).resolves({ Parameter: { Value: SECRET_VALUE } });
 
     const result = await new OriginSecretProvider(PARAM, client).load();

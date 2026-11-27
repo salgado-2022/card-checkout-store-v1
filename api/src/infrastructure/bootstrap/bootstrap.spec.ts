@@ -265,7 +265,7 @@ describe('adaptNestApp', () => {
     requestContext: {
       accountId: '123456789012',
       apiId: 'url-id',
-      domainName: 'url-id.lambda-url.us-east-1.on.aws',
+      domainName: 'url-id.lambda-url.us-east-2.on.aws',
       domainPrefix: 'url-id',
       http: {
         method: 'GET',
