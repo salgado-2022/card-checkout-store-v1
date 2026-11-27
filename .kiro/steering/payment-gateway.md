@@ -40,3 +40,11 @@ Finalization = one `TransactWriteItems`: transaction update conditioned on `stat
 
 ## Sandbox test cards
 4242 4242 4242 4242 → APPROVED · 4111 1111 1111 1111 → DECLINED · any other Luhn-valid number → ERROR. Future expiry, 3-digit CVC.
+
+## Reference lookup (Sandbox result)
+Checked on 2026-11-27 with the private key against the Sandbox, before branch 3.
+- Request: `GET {PAYMENT_API_URL}/transactions?reference=<reference>` with `Authorization: Bearer <private key>`.
+- Not found: HTTP 200 with body `{"data":[],"meta":{}}`. An empty `data` array means `not_found`; it is not an error and is not retried.
+- Found: `data` is an array whose items are transactions (provider id, status, `reference`, `amount_in_cents`, `currency`). Not checked yet: it is confirmed in branch 3 with the first transaction created through the API, before `findByReference` is implemented in branch 4. If several items come back, use the one whose `reference` matches exactly.
+- Without a key the provider answers HTTP 401 with `error.type` `INVALID_ACCESS_TOKEN`: map it to `REJECTED` (a configuration problem, never retried).
+
