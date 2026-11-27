@@ -127,7 +127,7 @@ resource "aws_lambda_function" "api" {
   runtime       = "nodejs22.x"
   handler       = "lambda.handler"
   memory_size   = 512
-  timeout       = 15
+  timeout       = 25
 
   filename         = coalesce(var.lambda_artifact_path, data.archive_file.lambda_placeholder.output_path)
   source_code_hash = var.lambda_artifact_path == null ? data.archive_file.lambda_placeholder.output_base64sha256 : filebase64sha256(var.lambda_artifact_path)
