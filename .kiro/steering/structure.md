@@ -20,7 +20,6 @@ inclusion: always
         config/             env validation
       main.ts · lambda.ts
     test/                   (or co-located *.spec.ts)
-    scripts/seed.ts
   web/                      React SPA
     src/
       app/                  store, persistence middleware (whitelist + versioned key "checkout:v1")

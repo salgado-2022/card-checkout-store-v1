@@ -29,7 +29,7 @@ Everything is **TypeScript** (`strict: true`), **Node.js 22 LTS** locally, in CI
 
 ## Coverage
 `coverageThreshold.global` = 80 for statements, branches, functions, lines in **both** projects. Working target: 90%.
-Allowed exclusions only: `main.ts`, `lambda.ts`, wiring-only Nest modules, `index.tsx`/`main.tsx`, type-only files, seed script.
+Allowed exclusions only: `main.ts`, `lambda.ts`, wiring-only Nest modules, `index.tsx`/`main.tsx`, type-only files.
 
 ## Environment variables
 Backend: `PAYMENT_API_URL`, `PAYMENT_PUBLIC_KEY`, `PAYMENT_PRIVATE_KEY_PARAM`, `PAYMENT_INTEGRITY_SECRET_PARAM`, `PAYMENT_EVENTS_SECRET_PARAM`, `ORIGIN_VERIFY_SECRET_PARAM`, `BASE_FEE_IN_CENTS=300000`, `DELIVERY_FEE_IN_CENTS=800000`, and the table names `DYNAMODB_TABLE_PRODUCTS`, `DYNAMODB_TABLE_CUSTOMERS`, `DYNAMODB_TABLE_TRANSACTIONS`, `DYNAMODB_TABLE_DELIVERIES`, `DYNAMODB_TABLE_IDEMPOTENCY_KEYS` — validated at startup. Use exactly these names in `.env.example`, the config schema and the Terraform Lambda environment.

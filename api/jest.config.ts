@@ -13,7 +13,6 @@ const config: Config = {
     '/src/lambda\\.ts$',
     '\\.module\\.ts$',
     '\\.d\\.ts$',
-    '/scripts/seed\\.ts$',
   ],
   coverageThreshold: {
     global: {

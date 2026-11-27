@@ -5,7 +5,6 @@ const EXPECTED_EXCLUSIONS = [
   '/src/lambda\\.ts$',
   '\\.module\\.ts$',
   '\\.d\\.ts$',
-  '/scripts/seed\\.ts$',
 ];
 
 describe('api Jest configuration (task 2.3)', () => {
