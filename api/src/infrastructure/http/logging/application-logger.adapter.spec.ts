@@ -31,6 +31,21 @@ function parseSingleLine(output: MemoryOutput): Record<string, unknown> {
 }
 
 describe('ApplicationLoggerAdapter', () => {
+  it('drops signature and checksum fields', () => {
+    const { adapter, stdout } = createAdapter();
+
+    adapter.info('event received', {
+      signature: 'sig-fake',
+      eventChecksum: 'chk-fake',
+      kept: 'yes',
+    });
+
+    const line = parseSingleLine(stdout);
+    expect(line).not.toHaveProperty('signature');
+    expect(line).not.toHaveProperty('eventChecksum');
+    expect(line).toMatchObject({ kept: 'yes' });
+  });
+
   it('writes one info JSON line with requestId and reference when given', () => {
     const { adapter, stdout, stderr } = createAdapter();
 

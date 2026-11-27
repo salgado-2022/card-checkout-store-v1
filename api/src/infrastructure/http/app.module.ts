@@ -7,6 +7,11 @@ import type { Clock } from '../../application/ports/clock';
 import type { CustomerRepository } from '../../application/ports/customer-repository';
 import type { IdGenerator } from '../../application/ports/id-generator';
 import type { ProductRepository } from '../../application/ports/product-repository';
+import type { DeliveryRepository } from '../../application/ports/delivery-repository';
+import type { IdempotencyRepository } from '../../application/ports/idempotency-repository';
+import type { TransactionRepository } from '../../application/ports/transaction-repository';
+import { CreateTransaction } from '../../application/use-cases/create-transaction';
+import { FinalizeTransaction } from '../../application/use-cases/finalize-transaction';
 import { GetAcceptanceTokens } from '../../application/use-cases/get-acceptance-tokens';
 import { GetCustomer } from '../../application/use-cases/get-customer';
 import { GetFees } from '../../application/use-cases/get-fees';
@@ -18,8 +23,11 @@ import {
   type PaymentGatewayAcceptance,
 } from '../payment/payment-gateway.adapter';
 import { DynamoCustomerRepository } from '../persistence/customer.repository.dynamodb';
+import { DynamoDeliveryRepository } from '../persistence/delivery.repository.dynamodb';
+import { DynamoIdempotencyRepository } from '../persistence/idempotency.repository.dynamodb';
 import { createDynamoDocumentClient } from '../persistence/dynamodb-client';
 import { DynamoProductRepository } from '../persistence/product.repository.dynamodb';
+import { DynamoTransactionRepository } from '../persistence/transaction.repository.dynamodb';
 import { SystemClock } from '../system/system-clock';
 import { UlidIdGenerator } from '../system/ulid-id-generator';
 import { AcceptanceTokensController } from './controllers/acceptance-tokens.controller';
@@ -27,6 +35,7 @@ import { CustomersController } from './controllers/customers.controller';
 import { FeesController } from './controllers/fees.controller';
 import { HealthController } from './controllers/health.controller';
 import { ProductsController } from './controllers/products.controller';
+import { TransactionsController } from './controllers/transactions.controller';
 import { ApplicationLoggerAdapter } from './logging/application-logger.adapter';
 import { JsonLogger } from './logging/json-logger';
 import { OriginGuardMiddleware } from './middleware/origin-guard.middleware';
@@ -41,6 +50,9 @@ export const DYNAMODB_DOCUMENT_CLIENT = Symbol('DYNAMODB_DOCUMENT_CLIENT');
 export const PRODUCT_REPOSITORY = Symbol('PRODUCT_REPOSITORY');
 export const CUSTOMER_REPOSITORY = Symbol('CUSTOMER_REPOSITORY');
 export const PAYMENT_GATEWAY = Symbol('PAYMENT_GATEWAY');
+export const IDEMPOTENCY_REPOSITORY = Symbol('IDEMPOTENCY_REPOSITORY');
+export const DELIVERY_REPOSITORY = Symbol('DELIVERY_REPOSITORY');
+export const TRANSACTION_REPOSITORY = Symbol('TRANSACTION_REPOSITORY');
 
 export interface AppModuleOptions {
   config: AppConfig;
@@ -62,6 +74,7 @@ export class AppModule {
         FeesController,
         CustomersController,
         AcceptanceTokensController,
+        TransactionsController,
       ],
       providers: [
         { provide: APP_CONFIG, useValue: options.config },
@@ -117,6 +130,8 @@ export class AppModule {
             new PaymentGatewayAdapter({
               paymentApiUrl: config.paymentApiUrl,
               paymentPublicKey: config.paymentPublicKey,
+              paymentPrivateKeyParam: config.paymentPrivateKeyParam,
+              paymentIntegritySecretParam: config.paymentIntegritySecretParam,
             }),
           inject: [APP_CONFIG],
         },
@@ -125,6 +140,81 @@ export class AppModule {
           useFactory: (gateway: PaymentGatewayAcceptance, logger: ApplicationLogger) =>
             new GetAcceptanceTokens(gateway, logger),
           inject: [PAYMENT_GATEWAY, APPLICATION_LOGGER],
+        },
+        {
+          provide: IDEMPOTENCY_REPOSITORY,
+          useFactory: (client: DynamoDBDocumentClient, config: AppConfig, clock: Clock) =>
+            new DynamoIdempotencyRepository(client, config.tables.idempotencyKeys, clock),
+          inject: [DYNAMODB_DOCUMENT_CLIENT, APP_CONFIG, CLOCK],
+        },
+        {
+          provide: DELIVERY_REPOSITORY,
+          useFactory: (client: DynamoDBDocumentClient, config: AppConfig) =>
+            new DynamoDeliveryRepository(client, config.tables.deliveries),
+          inject: [DYNAMODB_DOCUMENT_CLIENT, APP_CONFIG],
+        },
+        {
+          provide: TRANSACTION_REPOSITORY,
+          useFactory: (client: DynamoDBDocumentClient, config: AppConfig) =>
+            new DynamoTransactionRepository(client, config.tables.transactions, {
+              deliveries: config.tables.deliveries,
+              products: config.tables.products,
+            }),
+          inject: [DYNAMODB_DOCUMENT_CLIENT, APP_CONFIG],
+        },
+        {
+          provide: FinalizeTransaction,
+          useFactory: (
+            transactions: TransactionRepository,
+            logger: ApplicationLogger,
+            clock: Clock,
+          ) => new FinalizeTransaction(transactions, logger, clock),
+          inject: [TRANSACTION_REPOSITORY, APPLICATION_LOGGER, CLOCK],
+        },
+        {
+          provide: CreateTransaction,
+          useFactory: (
+            config: AppConfig,
+            idempotency: IdempotencyRepository,
+            products: ProductRepository,
+            customers: CustomerRepository,
+            transactions: TransactionRepository,
+            deliveries: DeliveryRepository,
+            gateway: PaymentGatewayAdapter,
+            finalize: FinalizeTransaction,
+            ids: IdGenerator,
+            clock: Clock,
+            logger: ApplicationLogger,
+          ) =>
+            new CreateTransaction(
+              idempotency,
+              products,
+              customers,
+              transactions,
+              deliveries,
+              gateway,
+              finalize,
+              {
+                baseFeeInCents: config.baseFeeInCents,
+                deliveryFeeInCents: config.deliveryFeeInCents,
+              },
+              ids,
+              clock,
+              logger,
+            ),
+          inject: [
+            APP_CONFIG,
+            IDEMPOTENCY_REPOSITORY,
+            PRODUCT_REPOSITORY,
+            CUSTOMER_REPOSITORY,
+            TRANSACTION_REPOSITORY,
+            DELIVERY_REPOSITORY,
+            PAYMENT_GATEWAY,
+            FinalizeTransaction,
+            ID_GENERATOR,
+            CLOCK,
+            APPLICATION_LOGGER,
+          ],
         },
         { provide: ORIGIN_SECRET_PROVIDER, useValue: options.originSecret },
         { provide: JsonLogger, useValue: options.logger },
