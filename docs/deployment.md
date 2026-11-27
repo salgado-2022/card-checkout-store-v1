@@ -14,7 +14,7 @@ plan -> apply -> deploy-api -> deploy-web -> smoke-test
 
 - An AWS account and a local AWS CLI profile with permission to create S3 buckets, IAM roles and IAM OIDC providers. This profile is used only for the bootstrap in section 2 and for the secrets in section 6.
 - AWS CLI v2.
-- Terraform 1.10 or later (the remote state uses the S3 lockfile, `use_lockfile = true`).
+- Terraform 1.10 or later (the remote state uses the S3 lockfile, `use_lockfile = true`). The `deploy` workflow pins Terraform 1.15.6, so use that version locally to get the same plan.
 - A GitHub repository (this project uses `salgado-2022/card-checkout-store`) with permission to manage environments and Actions variables, and `master` as the default branch. The OIDC trust policy names the `master` branch.
 - Payment sandbox credentials from the payment provider: the public key, the private key, the integrity secret and the events secret, plus the sandbox API base URL.
 - A project name for resource names and SSM paths. This guide uses the default `card-checkout-store`. Use the same value in the bootstrap and in `infra/` (`project_name`).
@@ -81,7 +81,7 @@ Create the payment secrets in section 6 before you start the first run.
 
 1. Start the run in one of two ways:
    - Merge a pull request into `master`. When `ci` finishes green on `master`, `deploy` starts by itself.
-   - Open **Actions > deploy > Run workflow**, choose the `master` branch and run it. Dispatch from `master` only. The deploy role does not trust other branches.
+   - Open **Actions > deploy > Run workflow**, choose the `master` branch and run it. Dispatch from `master` only: the `plan` job is skipped for any other branch, and the deploy role does not trust other branches.
 2. Open the run and wait for the `plan` job. Read the **Plan summary** in the job summary. See section 8 for what to check.
 3. Open the run page and select **Review deployments**, choose `production` and approve. The `apply` job starts. Each of the jobs `apply`, `deploy-api` and `deploy-web` targets `production`, so GitHub can ask for approval again for each one. Approve each request.
 4. The `apply` job creates the infrastructure with a placeholder Lambda. `deploy-api` replaces it with the real API code, `deploy-web` uploads the web build and invalidates the CloudFront cache, and `smoke-test` checks the public URL.
@@ -158,7 +158,7 @@ The `smoke-test` job runs this script. You can run it by hand against the public
 bash scripts/smoke-test.sh https://<distribution-domain>
 ```
 
-For `/` and `/api/v1/health` it checks status 200, the six security headers, and for health the body `{"status":"ok"}`. Each check retries up to 5 times. Set `SMOKE_RETRY_DELAY=<seconds>` to change the pause between attempts (default 5). The requests never send `X-Origin-Verify`, so a passing run shows that CloudFront adds it. On failure the script prints the name of the failed check and exits with a non-zero code.
+The script accepts only URLs that start with `https://` and runs `curl` with `--proto '=https'`. For `/` and `/api/v1/health` it checks status 200, the six security headers, and for health the body `{"status":"ok"}`. Each check retries up to 5 times. Set `SMOKE_RETRY_DELAY=<seconds>` to change the pause between attempts (default 5). The requests never send `X-Origin-Verify`, so a passing run shows that CloudFront adds it. On failure the script prints the name of the failed check and exits with a non-zero code.
 
 ### Manual checks
 
@@ -228,7 +228,7 @@ The Terraform plan file never leaves the runner and is never uploaded as an arti
 A secret change takes effect only after a Lambda cold start, because the function reads its parameters once at initialization.
 
 - **Payment secret.** Run `aws ssm put-parameter --overwrite` as in section 6, delete the local file, then force a new cold start. Re-run the `deploy` workflow (the `deploy-api` job publishes new code, which starts fresh execution environments), or update the function configuration, for example by changing an environment variable value in the Lambda console.
-- **Origin secret.** Terraform owns it through `random_password.origin_verify`. To rotate it, add a `keepers` argument to `random_password.origin_verify`, or change its value, in a pull request to `master`. Terraform then replaces the password. The change reaches AWS only through `deploy.yml`, after the `production` reviewer approves the `apply` job. Nobody runs Terraform state commands on a local machine. The approved apply generates a new value, updates the SSM parameter and the CloudFront custom header. The Lambda reads the new value only after a cold start, so run the `deploy-api` job again or update the function configuration. Read the plan summary first: it must show the replacement of the random password and the dependent updates.
+- **Origin secret.** Terraform owns it through `random_password.origin_verify`, whose `keepers` map holds the variable `origin_secret_rotation` (default `"1"`, declared in `infra/variables.tf`). To rotate it, open a pull request to `master` that changes that default, for example from `"1"` to `"2"`. When the `keepers` value changes, Terraform replaces the password. The change reaches AWS only through `deploy.yml`, after the `production` reviewer approves the `apply` job. Nobody runs Terraform state commands on a local machine. The approved apply generates a new value, updates the SSM parameter and the CloudFront custom header. The Lambda reads the new value only after a cold start, so run the `deploy-api` job again or update the function configuration. Read the plan summary first: it must show the replacement of the random password and the dependent updates.
 - **Short 403 window.** While you rotate the origin secret, the API can answer 403 for a short time. CloudFront and the Lambda switch to the new value at different moments. The state converges when the CloudFront distribution update finishes and the Lambda has a fresh execution environment. Run the smoke test after the rotation.
 
 ### Protect `master`

@@ -4,6 +4,7 @@ import * as path from 'path';
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const DEPLOYMENT_DOC = path.join(REPO_ROOT, 'docs', 'deployment.md');
 const INFRA_README = path.join(REPO_ROOT, 'infra', 'README.md');
+const DEPLOY_WORKFLOW = path.join(REPO_ROOT, '.github', 'workflows', 'deploy.yml');
 const WORDS_FILE = path.join(REPO_ROOT, '.kiro', 'private', 'forbidden-words.txt');
 
 const WORDS_EXIST = fs.existsSync(WORDS_FILE);
@@ -82,9 +83,27 @@ describe('docs/deployment.md', () => {
     expect(lower).toContain('required reviewer');
   });
 
-  it('describes origin secret rotation through a keepers change in a pull request', () => {
+  it('describes origin secret rotation through the origin_secret_rotation variable', () => {
     expect(doc).toContain('keepers');
     expect(doc).toContain('random_password.origin_verify');
+    expect(doc).toContain('`origin_secret_rotation`');
+    expect(doc).toContain('infra/variables.tf');
+    expect(lower).toContain('pull request');
+  });
+  it('states that the smoke test accepts only https URLs', () => {
+    expect(doc).toContain('start with `https://`');
+    expect(doc).toContain("--proto '=https'");
+  });
+  it('states that manual dispatch must run from master', () => {
+    expect(doc).toContain('Dispatch from `master` only');
+  });
+  it('states the Terraform version pinned by the workflow, matching deploy.yml', () => {
+    const workflow = fs.readFileSync(DEPLOY_WORKFLOW, 'utf8');
+    const pinned = [...workflow.matchAll(/terraform_version:\s*(\S+)/g)].map((match) => match[1]);
+    expect(pinned.length).toBeGreaterThan(0);
+    for (const version of pinned) {
+      expect(doc).toContain(`pins Terraform ${version}`);
+    }
   });
 
   it.each(FORBIDDEN_COMMANDS)('does not instruct to run "%s"', (command) => {
