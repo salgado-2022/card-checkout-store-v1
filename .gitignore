@@ -19,6 +19,8 @@ tfplan
 node_modules/
 coverage/
 dist/
+# Generated Docs_Site, rebuilt by `npm run docs:site` in api/
+/docs/site/
 # Anchored: api/test/build/ holds tests and must stay tracked.
 /api/build/
 lambda.zip
