@@ -8,7 +8,7 @@ Live environment: https://<distribution-domain> (added after the first deploymen
 
 The deployment guide, with the one-time setup, the deploy variables and the verification steps, is in [docs/deployment.md](docs/deployment.md).
 
-After CI passes on `master`, GitHub Actions runs the `deploy` workflow. It plans the infrastructure, then applies it and deploys the API and the web app to AWS (`us-east-1`). The `apply`, `deploy-api` and `deploy-web` jobs wait for a manual approval in the `production` environment, so no change reaches AWS without a reviewer.
+After CI passes on `master`, GitHub Actions runs the `deploy` workflow. It plans the infrastructure, then applies it and deploys the API and the web app to AWS (`us-east-2`). The `apply`, `deploy-api` and `deploy-web` jobs wait for a manual approval in the `production` environment, so no change reaches AWS without a reviewer.
 
 ## Cost
 
@@ -27,7 +27,7 @@ The stack uses only AWS services in the always-free tier: Lambda, DynamoDB provi
 ```text
 api/        NestJS backend (hexagonal: domain, application, infrastructure)
 web/        React 18 SPA built with Vite
-infra/      Terraform for AWS (us-east-1)
+infra/      Terraform for AWS (us-east-2)
 docs/       Architecture notes, Postman collection, coverage reports
 scripts/    Repository scripts (forbidden-words check)
 .github/    Pull request template and GitHub Actions workflows

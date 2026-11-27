@@ -1,10 +1,10 @@
 # Infrastructure
 
-Terraform code for the AWS environment in `us-east-1`: CloudFront with an S3 web bucket, a Lambda function with a Function URL, five provisioned DynamoDB tables, SSM parameters, CloudWatch logs with 7 days of retention, and a 1 USD budget alarm.
+Terraform code for the AWS environment in `us-east-2`: CloudFront with an S3 web bucket, a Lambda function with a Function URL, five provisioned DynamoDB tables, SSM parameters, CloudWatch logs with 7 days of retention, and a 1 USD budget alarm.
 
 ```text
 infra/            main module, applied only by the deploy workflow
-infra/bootstrap/  one-time module run by the developer (state bucket, OIDC provider, deploy role)
+infra/bootstrap/  one-time module run by the developer (state bucket, deploy role; the GitHub OIDC provider already exists and is referenced by ARN)
 ```
 
 ## Local checks

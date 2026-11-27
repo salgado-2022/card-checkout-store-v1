@@ -1,6 +1,6 @@
 # Deployment guide
 
-One-time setup that enables automatic deployments of the web app and the API to AWS (`us-east-1`) from GitHub Actions. Follow the sections in order.
+One-time setup that enables automatic deployments of the web app and the API to AWS (`us-east-2`) from GitHub Actions. Follow the sections in order.
 
 After the setup, every green `ci` run on `master` starts the `deploy` workflow:
 
@@ -12,16 +12,17 @@ plan -> apply -> deploy-api -> deploy-web -> smoke-test
 
 ## 1. Prerequisites
 
-- An AWS account and a local AWS CLI profile with permission to create S3 buckets, IAM roles and IAM OIDC providers. This profile is used only for the bootstrap in section 2 and for the secrets in section 6.
+- An AWS account and a local AWS CLI profile with permission to create S3 buckets and IAM roles and policies. This profile is used only for the bootstrap in section 2 and for the secrets in section 6.
 - AWS CLI v2.
 - Terraform 1.10 or later (the remote state uses the S3 lockfile, `use_lockfile = true`). The `deploy` workflow pins Terraform 1.15.6, so use that version locally to get the same plan.
+- The GitHub OIDC identity provider (`token.actions.githubusercontent.com`, audience `sts.amazonaws.com`) already present in the AWS account. The bootstrap does not create, import or read it: the trust policy builds its ARN from the account id.
 - A GitHub repository (this project uses `salgado-2022/card-checkout-store`) with permission to manage environments and Actions variables, and `master` as the default branch. The OIDC trust policy names the `master` branch.
 - Payment sandbox credentials from the payment provider: the public key, the private key, the integrity secret and the events secret, plus the sandbox API base URL.
 - A project name for resource names and SSM paths. This guide uses the default `card-checkout-store`. Use the same value in the bootstrap and in `infra/` (`project_name`).
 
 ## 2. Bootstrap
 
-Run the bootstrap module once, from your machine. It creates the Terraform state bucket, the GitHub OIDC identity provider, the deploy role, and the permissions boundary for the Lambda execution role.
+Run the bootstrap module once, from your machine. It creates the Terraform state bucket, the deploy role (which trusts the existing GitHub OIDC provider), and the permissions boundary for the Lambda execution role.
 
 ```bash
 cd infra/bootstrap
@@ -67,7 +68,7 @@ Create these as **repository variables** in **Settings > Secrets and variables >
 | Variable | Scope | Where the value comes from |
 |---|---|---|
 | `AWS_ROLE_ARN` | Repository (the `plan` job has no environment and must read it) | Bootstrap output `deploy_role_arn` |
-| `AWS_REGION` | Repository | `us-east-1` |
+| `AWS_REGION` | Repository | `us-east-2` |
 | `TF_STATE_BUCKET` | Repository | Bootstrap output `state_bucket_name` |
 | `BUDGET_NOTIFICATION_EMAIL` | Repository | Your email address. AWS Budgets sends the 1 USD budget alerts here. |
 | `PAYMENT_API_URL` | Repository | Base URL of the payment provider sandbox API (public value) |
@@ -91,7 +92,7 @@ The first run can take several minutes because CloudFront needs time to deploy.
 To find the public domain, read the `DISTRIBUTION_DOMAIN` value in the `smoke-test` job log, or run:
 
 ```bash
-aws cloudfront list-distributions --region us-east-1 \
+aws cloudfront list-distributions --region us-east-2 \
   --query "DistributionList.Items[?Comment=='card-checkout-store web and API'].DomainName" \
   --output text
 ```
@@ -115,19 +116,19 @@ Read each value from a local file, so it stays out of your shell history and pro
 
 # 2. Create the parameter.
 aws ssm put-parameter \
-  --region us-east-1 \
+  --region us-east-2 \
   --name /card-checkout-store/payment/private-key \
   --type SecureString \
   --value file://<private-key-file>
 
 aws ssm put-parameter \
-  --region us-east-1 \
+  --region us-east-2 \
   --name /card-checkout-store/payment/integrity-secret \
   --type SecureString \
   --value file://<integrity-secret-file>
 
 aws ssm put-parameter \
-  --region us-east-1 \
+  --region us-east-2 \
   --name /card-checkout-store/payment/events-secret \
   --type SecureString \
   --value file://<events-secret-file>
@@ -139,7 +140,7 @@ rm <private-key-file> <integrity-secret-file> <events-secret-file>
 To confirm a parameter exists without printing its value, read only its version:
 
 ```bash
-aws ssm get-parameter --region us-east-1 \
+aws ssm get-parameter --region us-east-2 \
   --name /card-checkout-store/payment/private-key \
   --query Parameter.Version --output text
 ```
@@ -189,7 +190,7 @@ DOMAIN=<distribution-domain>
 4. **Direct Function URL returns 403.** The Function URL is not a Terraform output, so read it from AWS. A request without `X-Origin-Verify` must be rejected. Expected: `403`.
 
    ```bash
-   FUNCTION_URL=$(aws lambda get-function-url-config --region us-east-1 \
+   FUNCTION_URL=$(aws lambda get-function-url-config --region us-east-2 \
      --function-name card-checkout-store-api --query FunctionUrl --output text)
    curl -sS -o /dev/null -w '%{http_code}\n' "${FUNCTION_URL}api/v1/health"
    ```

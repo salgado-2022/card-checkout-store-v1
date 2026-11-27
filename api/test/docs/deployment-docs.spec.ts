@@ -65,6 +65,17 @@ describe('docs/deployment.md', () => {
     expect(doc).toContain(`\`${name}\``);
   });
 
+  it('uses us-east-2 for every regional command and never us-east-1', () => {
+    expect(doc).toContain('`us-east-2`');
+    expect(doc).not.toContain('us-east-1');
+  });
+
+  it('states that the GitHub OIDC provider already exists and is not created by the bootstrap', () => {
+    expect(doc).toContain('already present in the AWS account');
+    expect(doc).toContain('does not create, import or read it');
+    expect(doc).not.toMatch(/IAM OIDC providers/);
+  });
+
   it('creates payment secrets as SecureString from a local file', () => {
     expect(doc).toContain('--type SecureString');
     expect(doc).toContain('file://');
@@ -126,6 +137,11 @@ describe('infra/README.md', () => {
 
   it.each(LOCAL_COMMANDS)('documents the local command "%s"', (command) => {
     expect(readme).toContain(command);
+  });
+
+  it('names us-east-2 and not us-east-1', () => {
+    expect(readme).toContain('us-east-2');
+    expect(readme).not.toContain('us-east-1');
   });
 
   it('links to docs/deployment.md', () => {
