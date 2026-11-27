@@ -22,7 +22,6 @@ variable "budget_notification_email" {
 variable "payment_api_url" {
   description = "Base URL of the payment provider API. Used in the CSP connect-src header."
   type        = string
-  default     = "https://api.sandbox.payment.example"
 
   validation {
     condition     = can(regex("^https://", var.payment_api_url))

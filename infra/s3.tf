@@ -2,7 +2,7 @@
 # can read it, through its Origin Access Control (OAC) service principal.
 
 resource "aws_s3_bucket" "web" {
-  bucket = "${var.project_name}-web"
+  bucket = "${var.project_name}-web-${data.aws_caller_identity.current.account_id}"
 }
 
 resource "aws_s3_bucket_public_access_block" "web" {
@@ -30,6 +30,21 @@ data "aws_iam_policy_document" "web_bucket" {
       test     = "StringEquals"
       variable = "AWS:SourceArn"
       values   = [aws_cloudfront_distribution.web.arn]
+    }
+  }
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.web.arn, "${aws_s3_bucket.web.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
     }
   }
 }

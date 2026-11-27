@@ -279,6 +279,16 @@ describe('infra/*.tf root module (static)', () => {
       expect(headersPolicy.body).toMatch(pattern);
     });
 
+    it('locks down base-uri, object-src, frame-ancestors and form-action in the CSP', () => {
+      const csp = headersPolicy.body;
+      expect(csp).toContain(`"base-uri 'self'"`);
+      expect(csp).toContain(`"object-src 'none'"`);
+      expect(csp).toContain(`"frame-ancestors 'none'"`);
+      expect(csp).toContain(`"form-action 'self'"`);
+      expect(csp).toContain(`"img-src 'self'"`);
+      expect(csp).not.toMatch(/unsafe-inline|unsafe-eval|data:/);
+    });
+
     it('sends the origin secret as X-Origin-Verify from random_password', () => {
       const origins = nestedBlocksOf(distribution.body, 'origin');
       const headers = origins.flatMap((origin) => nestedBlocksOf(origin.body, 'custom_header'));
@@ -290,7 +300,64 @@ describe('infra/*.tf root module (static)', () => {
     });
   });
 
+  describe('Lambda KMS access', () => {
+    const policy = parseBlocks(code, 'data').find((block) => block.labels[1] === 'lambda_exec');
+    const statements = nestedBlocksOf(policy?.body ?? '', 'statement');
+    const decrypt = statements.find((block) => /"DecryptParametersViaSsm"/.test(block.body));
+
+    it('allows kms:Decrypt only through SSM in us-east-1', () => {
+      expect(decrypt).toBeDefined();
+      const body = decrypt?.body ?? '';
+      expect(body).toMatch(/actions[ \t]*=[ \t]*\["kms:Decrypt"\]/);
+      expect(body).toMatch(/resources[ \t]*=[ \t]*\["arn:aws:kms:us-east-1:\$\{[^}]+\}:key\/\*"\]/);
+      expect(body).toMatch(/test[ \t]*=[ \t]*"StringEquals"/);
+      expect(body).toMatch(/variable[ \t]*=[ \t]*"kms:ViaService"/);
+      expect(body).toMatch(/values[ \t]*=[ \t]*\["ssm\.us-east-1\.amazonaws\.com"\]/);
+    });
+
+    it('grants no other KMS action', () => {
+      const kmsActions = [...code.matchAll(/"(kms:[A-Za-z*]+)"/g)].map((m) => m[1]);
+      expect(new Set(kmsActions)).toEqual(new Set(['kms:Decrypt', 'kms:ViaService']));
+    });
+  });
+
+  describe('web bucket', () => {
+    const bucket = findBlock(resourcesOf('aws_s3_bucket'), 'web');
+    const policyDoc = findBlock(parseBlocks(code, 'data'), 'web_bucket');
+
+    it('names the bucket with the project name and the account id', () => {
+      expect(attribute(bucket.body, 'bucket')).toBe(
+        '"${var.project_name}-web-${data.aws_caller_identity.current.account_id}"',
+      );
+    });
+
+    it('denies every request that does not use TLS', () => {
+      const deny = nestedBlocksOf(policyDoc.body, 'statement').find((block) =>
+        /effect[ \t]*=[ \t]*"Deny"/.test(block.body),
+      );
+      expect(deny).toBeDefined();
+      const body = deny?.body ?? '';
+      expect(body).toMatch(/actions[ \t]*=[ \t]*\["s3:\*"\]/);
+      expect(body).toContain('aws_s3_bucket.web.arn');
+      expect(body).toContain('"${aws_s3_bucket.web.arn}/*"');
+      expect(body).toMatch(/test[ \t]*=[ \t]*"Bool"/);
+      expect(body).toMatch(/variable[ \t]*=[ \t]*"aws:SecureTransport"/);
+      expect(body).toMatch(/values[ \t]*=[ \t]*\["false"\]/);
+    });
+
+    it('keeps the CloudFront OAC read statement', () => {
+      expect(policyDoc.body).toMatch(/identifiers[ \t]*=[ \t]*\["cloudfront\.amazonaws\.com"\]/);
+      expect(policyDoc.body).toMatch(/variable[ \t]*=[ \t]*"AWS:SourceArn"/);
+    });
+  });
+
   describe('variables and SSM', () => {
+    it('requires payment_api_url (no default) and validates the https:// prefix', () => {
+      const variable = findBlock(parseBlocks(code, 'variable'), 'payment_api_url');
+      expect(topLevel(variable.body)).not.toMatch(/^[ \t]*default[ \t]*=/m);
+      expect(variable.body).toMatch(/regex\("\^https:\/\/", var\.payment_api_url\)/);
+    });
+
     it('declares budget_notification_email without a default', () => {
       const variable = findBlock(parseBlocks(code, 'variable'), 'budget_notification_email');
       expect(topLevel(variable.body)).not.toMatch(/^[ \t]*default[ \t]*=/m);

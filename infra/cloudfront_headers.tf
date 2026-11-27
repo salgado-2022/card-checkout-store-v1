@@ -33,6 +33,10 @@ resource "aws_cloudfront_response_headers_policy" "security" {
         "style-src 'self'",
         "img-src 'self'",
         "connect-src 'self' ${var.payment_api_url}",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
       ])
       override = true
     }
