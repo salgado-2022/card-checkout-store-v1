@@ -236,6 +236,19 @@ DOMAIN=<distribution-domain>
    curl -sS -i "https://$DOMAIN/api/v1/unknown-route"
    ```
 
+8. **Docs site loads.** Expected: status `200` and content type `text/html` for both `/docs/` and `/docs`. The page lists the endpoints. The browser console shows no Content-Security-Policy violation.
+
+   ```bash
+   curl -sS -o /dev/null -w '%{http_code} %{content_type}\n' "https://$DOMAIN/docs/"
+   curl -sS -o /dev/null -w '%{http_code} %{content_type}\n' "https://$DOMAIN/docs"
+   ```
+
+9. **OpenAPI document is served.** Expected: status `200`, a JSON body whose `openapi` field is present and whose `paths` include `/api/v1/transactions`.
+
+   ```bash
+   curl -sS "https://$DOMAIN/docs/openapi.json" | grep -o '"/api/v1/transactions"'
+   ```
+
 ## 8. Security notes
 
 ### Secrets stay out of GitHub, Terraform and the repository

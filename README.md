@@ -10,6 +10,22 @@ The deployment guide, with the one-time setup, the deploy variables and the veri
 
 After CI passes on `master`, GitHub Actions runs the `deploy` workflow. It plans the infrastructure, then applies it and deploys the API and the web app to AWS (`us-east-2`). The `apply`, `deploy-api` and `deploy-web` jobs wait for a manual approval in the `production` environment, so no change reaches AWS without a reviewer.
 
+## API documentation
+
+- Docs site (endpoint list and Swagger UI): `https://<distribution-domain>/docs/`
+- OpenAPI document: [docs/openapi.json](docs/openapi.json), also served at `https://<distribution-domain>/docs/openapi.json`
+- Postman collection: [docs/postman/payments-api.postman_collection.json](docs/postman/payments-api.postman_collection.json)
+- Written contract (endpoints, error codes, content-type and rate limit rules): [.kiro/steering/api-contract.md](.kiro/steering/api-contract.md)
+
+## Rate limit
+
+The API allows 60 requests per client IP in a sliding 60 second window, for every route under `/api/v1` except `GET /api/v1/health`. A request over the limit gets 429 `TOO_MANY_REQUESTS`, and rejected requests do not extend the block.
+
+- The client IP comes from the `CloudFront-Viewer-Address` header. When that header is missing, the API uses the socket address (the CloudFront edge address).
+- Counters live in memory in each Lambda execution environment. Several containers keep separate counters, so the limit is never stricter than 60 per minute.
+- Users behind the same NAT or public address share one quota.
+- A checkout that polls `GET /api/v1/transactions/:id` every 2 seconds for 60 seconds uses about 35 to 45 requests per minute, inside the limit.
+
 ## Cost
 
 The stack uses only AWS services in the always-free tier: Lambda, DynamoDB provisioned capacity, CloudFront, S3, SSM Parameter Store and CloudWatch Logs with 7-day retention. A 1 USD AWS Budgets alarm emails the address in `BUDGET_NOTIFICATION_EMAIL` when actual spend reaches 80% of the limit and when forecast spend reaches 100%.
