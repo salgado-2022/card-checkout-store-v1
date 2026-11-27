@@ -38,12 +38,21 @@ export interface PaymentCreateRequest {
   readonly installments: number;
 }
 
+/**
+ * The provider answered with a status this API does not know. Callers keep the Transaction PENDING
+ * and log a warning (Requirement 9.3). The raw provider value is never carried.
+ */
+export interface UnknownProviderStatus {
+  readonly status: 'UNKNOWN';
+}
+/** What `getStatus` and `findByReference` report: a mapped status or an explicit `UNKNOWN`. */
+export type ProviderStatusReport = ProviderStatus | UnknownProviderStatus;
 export interface PaymentCreateResponse extends ProviderStatus {
   readonly externalId: string;
 }
 
 export type ReconciliationOutcome =
-  | { readonly kind: 'found'; readonly externalId: string; readonly status: ProviderStatus }
+  | { readonly kind: 'found'; readonly externalId: string; readonly status: ProviderStatusReport }
   | { readonly kind: 'not_found' };
 
 export interface PaymentGateway {
@@ -52,7 +61,7 @@ export interface PaymentGateway {
   /** Standard_Profile: 10 s timeout, one retry after a 500 ms backoff on timeout or 5xx, never on 4xx. */
   create(request: PaymentCreateRequest): ResultAsync<PaymentCreateResponse, PaymentGatewayError>;
   /** Single_Attempt_Profile: 3 s timeout, exactly one attempt, no retry (client polling is the retry). */
-  getStatus(externalId: string): ResultAsync<ProviderStatus, PaymentGatewayError>;
+  getStatus(externalId: string): ResultAsync<ProviderStatusReport, PaymentGatewayError>;
   /**
    * Single_Attempt_Profile: 3 s timeout, exactly one attempt, no retry.
    * Read-only lookup by OUR reference, used only when no External_Id is known yet (Requirement 8).

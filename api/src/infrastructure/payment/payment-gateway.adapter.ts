@@ -1,4 +1,4 @@
-import { err, ok, ResultAsync, type Result } from 'neverthrow';
+import { err, errAsync, ok, ResultAsync, type Result } from 'neverthrow';
 import { z } from 'zod';
 import type { PaymentGatewayError } from '../../application/errors';
 import type {
@@ -7,24 +7,25 @@ import type {
   PaymentCreateRequest,
   PaymentCreateResponse,
   PaymentGateway,
+  ProviderStatusReport,
+  ReconciliationOutcome,
 } from '../../application/ports/payment-gateway';
-import { TRANSACTION_STATUSES } from '../../domain/transaction-status';
+import { TRANSACTION_STATUSES, type TransactionStatus } from '../../domain/transaction-status';
 import type { AppConfig } from '../config/env.config';
 import { SsmParameterReader, type SsmParameterError } from '../config/ssm-parameter-reader';
 import { computeIntegritySignature } from './integrity-signature';
 import {
   MAX_BODY_BYTES,
   STANDARD_PROFILE_TIMING,
+  SINGLE_ATTEMPT_PROFILE_TIMING,
+  withSingleAttemptProfile,
   withStandardProfile,
   type ProviderAttempt,
+  type SingleAttemptTiming,
   type StandardTiming,
 } from './provider-call-policy';
 
-/**
- * Adapter for the payment provider. It implements only the methods of the port that exist so far:
- * `create` (branch 3) and `getStatus`/`findByReference` (branch 4) arrive with their own tasks, so
- * the adapter never exposes a method that answers with a placeholder error.
- */
+/** Adapter for the payment provider: it implements every method of the `PaymentGateway` port. */
 export type PaymentGatewayAcceptance = Pick<PaymentGateway, 'getAcceptanceTokens'>;
 
 export type PaymentGatewayAdapterConfig = Pick<
@@ -59,6 +60,18 @@ const createSchema = z.object({
     currency: z.string().min(1),
   }),
 });
+// Provider response shape for the transaction read endpoints. The status is read first as free text
+// so an unrecognized value becomes `UNKNOWN` instead of a schema failure.
+const statusOnlySchema = z.object({ status: z.string().min(1) });
+const transactionSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(TRANSACTION_STATUSES),
+  status_message: z.string().nullish(),
+  reference: z.string().min(1),
+  amount_in_cents: z.number().int().nonnegative(),
+  currency: z.string().min(1),
+});
+const itemEnvelopeSchema = z.object({ data: z.unknown() });
 const errorBodySchema = z.object({ error: z.object({ type: z.string() }) });
 type MerchantPayload = z.infer<typeof merchantSchema>;
 
@@ -126,6 +139,86 @@ export const rejectionMessageFrom = (bodyText: string): string => {
     ? parsed.data.error.type
     : REJECTED_FALLBACK_MESSAGE;
 };
+// External ids and references come from our own database, but they are still checked before they
+// become part of a provider URL, so a malformed value can never point the request somewhere else.
+const IDENTIFIER_PATTERN = /^(?!.*\.\.)[A-Za-z0-9_.:-]{1,128}$/;
+const invalidIdentifier = (): PaymentGatewayError => ({
+  kind: 'INVALID_RESPONSE',
+  reason: 'InvalidIdentifier',
+});
+const UNKNOWN_REPORT: ProviderStatusReport = { status: 'UNKNOWN' };
+const NOT_FOUND: ReconciliationOutcome = { kind: 'not_found' };
+const schemaMismatch = (): PaymentGatewayError => ({
+  kind: 'INVALID_RESPONSE',
+  reason: SCHEMA_MISMATCH_REASON,
+});
+const isKnownStatus = (value: string): value is TransactionStatus =>
+  (TRANSACTION_STATUSES as readonly string[]).includes(value);
+const hasReference = (item: unknown, reference: string): boolean =>
+  typeof item === 'object' && item !== null && 'reference' in item && item.reference === reference;
+
+interface ParsedTransaction {
+  readonly externalId: string | null;
+  readonly report: ProviderStatusReport;
+}
+const idOnlySchema = z.object({ id: z.string().min(1) });
+
+/** Maps one provider transaction record. An unrecognized status is `UNKNOWN`, not an error. */
+const parseTransaction = (record: unknown): Result<ParsedTransaction, PaymentGatewayError> => {
+  const statusOnly = statusOnlySchema.safeParse(record);
+  if (!statusOnly.success) return err(schemaMismatch());
+  if (!isKnownStatus(statusOnly.data.status)) {
+    const id = idOnlySchema.safeParse(record);
+    return ok({ externalId: id.success ? id.data.id : null, report: UNKNOWN_REPORT });
+  }
+  const parsed = transactionSchema.safeParse(record);
+  if (!parsed.success) return err(schemaMismatch());
+  const { data } = parsed;
+  return ok({
+    externalId: data.id,
+    report: {
+      status: data.status,
+      message: data.status_message ?? null,
+      amountInCents: data.amount_in_cents,
+      currency: data.currency,
+      reference: data.reference,
+    },
+  });
+};
+
+/** Picks the record whose reference equals ours exactly. No exact match is `not_found`. */
+const toReconciliation = (
+  body: unknown,
+  reference: string,
+): Result<ReconciliationOutcome, PaymentGatewayError> => {
+  const envelope = itemEnvelopeSchema.safeParse(body);
+  if (!envelope.success) return err(schemaMismatch());
+  const { data } = envelope.data;
+  if (data === null || data === undefined) return ok(NOT_FOUND);
+  const items: readonly unknown[] = Array.isArray(data) ? data : [data];
+  const match = items.find((item) => hasReference(item, reference));
+  if (match === undefined) return ok(NOT_FOUND);
+  return parseTransaction(match).andThen(({ externalId, report }) =>
+    externalId === null
+      ? err(schemaMismatch())
+      : ok<ReconciliationOutcome, PaymentGatewayError>({
+          kind: 'found',
+          externalId,
+          status: report,
+        }),
+  );
+};
+
+const toStatusReport = (body: unknown): Result<ProviderStatusReport, PaymentGatewayError> => {
+  const envelope = itemEnvelopeSchema.safeParse(body);
+  return envelope.success
+    ? parseTransaction(envelope.data.data).map(({ report }) => report)
+    : err(schemaMismatch());
+};
+
+const readJson = (response: Response): ResultAsync<unknown, PaymentGatewayError> =>
+  ResultAsync.fromPromise(response.json() as Promise<unknown>, jsonFailure);
+
 const secretFailure = (error: SsmParameterError): PaymentGatewayError => ({
   kind: 'UNAVAILABLE',
   reason: `${SECRET_UNAVAILABLE_REASON}:${error.reason}`,
@@ -136,12 +229,15 @@ const jsonFailure = (cause: unknown): PaymentGatewayError => ({
 });
 
 export class PaymentGatewayAdapter
-  implements PaymentGatewayAcceptance, Pick<PaymentGateway, 'create'>
+  implements
+    PaymentGatewayAcceptance,
+    Pick<PaymentGateway, 'create' | 'getStatus' | 'findByReference'>
 {
   constructor(
     private readonly config: PaymentGatewayAdapterConfig,
     private readonly timing: StandardTiming = STANDARD_PROFILE_TIMING,
     private readonly secrets: ParameterSource = new SsmParameterReader(),
+    private readonly singleAttemptTiming: SingleAttemptTiming = SINGLE_ATTEMPT_PROFILE_TIMING,
   ) {}
   /**
    * Standard_Profile. The only method that sends a creation request. The private key, integrity
@@ -207,6 +303,63 @@ export class PaymentGatewayAdapter
       }
       return response;
     };
+  }
+
+  /**
+   * Single_Attempt_Profile: one `GET /transactions/{externalId}`, 3 s timeout, never retried.
+   * Never sends a creation request. A status outside the known set is reported as `UNKNOWN`.
+   */
+  getStatus(externalId: string): ResultAsync<ProviderStatusReport, PaymentGatewayError> {
+    if (!IDENTIFIER_PATTERN.test(externalId)) return errAsync(invalidIdentifier());
+    const url = `${this.baseUrl()}/transactions/${encodeURIComponent(externalId)}`;
+    return this.singleAttemptGet(url).andThen(readJson).andThen(toStatusReport);
+  }
+
+  /**
+   * Single_Attempt_Profile: one read-only `GET /transactions?reference=...`. An empty result, a
+   * null transaction or no exact reference match is `Ok(not_found)`. The Sandbox answers an unknown
+   * reference with 200 and `data: []`, so a 404 is NOT read as "no record": it means a wrong URL or
+   * path, and it stays an error, so the transaction is kept PENDING instead of being closed as
+   * PROVIDER_UNREACHABLE while the charge may exist.
+   */
+  findByReference(reference: string): ResultAsync<ReconciliationOutcome, PaymentGatewayError> {
+    if (!IDENTIFIER_PATTERN.test(reference)) return errAsync(invalidIdentifier());
+    const url = `${this.baseUrl()}/transactions?reference=${encodeURIComponent(reference)}`;
+    return this.singleAttemptGet(url)
+      .andThen(readJson)
+      .andThen((body) => toReconciliation(body, reference));
+  }
+
+  private baseUrl(): string {
+    return this.config.paymentApiUrl.replace(/\/+$/, '');
+  }
+
+  /**
+   * One authorized GET under the Single_Attempt_Profile.
+   */
+  private singleAttemptGet(url: string): ResultAsync<Response, PaymentGatewayError> {
+    return this.secrets
+      .load(this.config.paymentPrivateKeyParam)
+      .mapErr(secretFailure)
+      .andThen((privateKey) => {
+        const rejection = { message: REJECTED_FALLBACK_MESSAGE };
+        const attempt: ProviderAttempt = async (signal) => {
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: { Accept: 'application/json', Authorization: `Bearer ${privateKey}` },
+            redirect: 'manual',
+            signal,
+          });
+          if (response.status >= 400 && response.status < 500) {
+            rejection.message = rejectionMessageFrom(await response.clone().text());
+          }
+          return response;
+        };
+        return withSingleAttemptProfile(attempt, this.singleAttemptTiming).mapErr(
+          (error): PaymentGatewayError =>
+            error.kind === 'REJECTED' ? { ...error, providerMessage: rejection.message } : error,
+        );
+      });
   }
 
   /** Standard_Profile. Errors carry a reason only; the URL, key, token and body are never included. */

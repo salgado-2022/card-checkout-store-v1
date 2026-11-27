@@ -5,7 +5,7 @@ import type {
   PaymentCreateRequest,
   PaymentCreateResponse,
   PaymentGateway,
-  ProviderStatus,
+  ProviderStatusReport,
   ReconciliationOutcome,
 } from '../../src/application/ports/payment-gateway';
 
@@ -50,7 +50,7 @@ export class FakePaymentGateway implements PaymentGateway {
   readonly script = {
     getAcceptanceTokens: new MethodScript<[], AcceptanceTokens>(),
     create: new MethodScript<[PaymentCreateRequest], PaymentCreateResponse>(),
-    getStatus: new MethodScript<[string], ProviderStatus>(),
+    getStatus: new MethodScript<[string], ProviderStatusReport>(),
     findByReference: new MethodScript<[string], ReconciliationOutcome>(),
   };
   readonly callLog: GatewayMethod[] = [];
