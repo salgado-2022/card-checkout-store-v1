@@ -7,8 +7,34 @@ data "aws_cloudfront_cache_policy" "caching_disabled" {
   name = "Managed-CachingDisabled"
 }
 
-data "aws_cloudfront_origin_request_policy" "all_viewer_except_host_header" {
-  name = "Managed-AllViewerExceptHostHeader"
+# Only the viewer headers the API reads reach the Lambda Function URL. Host is never
+# forwarded: the Function URL answers 403 to a foreign Host. X-Origin-Verify is an
+# origin custom header, so it is set by the origin and not whitelisted here.
+resource "aws_cloudfront_origin_request_policy" "api" {
+  name    = "${var.project_name}-api"
+  comment = "API viewer headers and query strings, no cookies, never Host"
+
+  headers_config {
+    header_behavior = "whitelist"
+    headers {
+      items = [
+        "CloudFront-Viewer-Address",
+        "Content-Type",
+        "Accept",
+        "Idempotency-Key",
+        "X-Event-Checksum",
+        "X-Request-Id",
+      ]
+    }
+  }
+
+  query_strings_config {
+    query_string_behavior = "all"
+  }
+
+  cookies_config {
+    cookie_behavior = "none"
+  }
 }
 
 locals {
@@ -75,6 +101,37 @@ resource "aws_cloudfront_distribution" "web" {
     }
   }
 
+  # Static API docs from the S3 origin. "/docs" and "/docs/*" are separate patterns
+  # because "/docs/*" does not match the exact string "/docs". Both use the docs
+  # headers policy and the docs index function, never the SPA rewrite.
+  ordered_cache_behavior {
+    path_pattern               = "/docs"
+    target_origin_id           = local.s3_origin_id
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.docs.id
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.docs_index_rewrite.arn
+    }
+  }
+  ordered_cache_behavior {
+    path_pattern               = "/docs/*"
+    target_origin_id           = local.s3_origin_id
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.docs.id
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.docs_index_rewrite.arn
+    }
+  }
   ordered_cache_behavior {
     path_pattern               = "/api/*"
     target_origin_id           = local.lambda_origin_id
@@ -83,7 +140,7 @@ resource "aws_cloudfront_distribution" "web" {
     cached_methods             = ["GET", "HEAD"]
     compress                   = true
     cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
-    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host_header.id
+    origin_request_policy_id   = aws_cloudfront_origin_request_policy.api.id
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
   }
 

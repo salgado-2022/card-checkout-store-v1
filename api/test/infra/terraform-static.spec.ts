@@ -87,6 +87,41 @@ function numericAttribute(text: string, name: string): number {
   return Number(attribute(text, name));
 }
 
+// Concatenated bodies of every locals block (locals blocks carry no labels).
+function localsBodyOf(text: string): string {
+  return [...text.matchAll(/^locals[ \t]*\{/gm)]
+    .map((match) => {
+      const open = (match.index ?? 0) + match[0].length - 1;
+      return text.slice(open + 1, closingIndex(text, open));
+    })
+    .join('\n');
+}
+
+// Resolves the csp_directives list: one quoted string per line. The payment origin
+// interpolation is replaced by a fake origin so the directives can be compared.
+function cspDirectivesOf(localsText: string): string[] {
+  const list = /csp_directives[ \t]*=[ \t]*\[([\s\S]*?)\n[ \t]*\]/.exec(localsText);
+  if (!list) {
+    throw new Error('csp_directives list not found');
+  }
+  return list[1]
+    .split('\n')
+    .map((line) => /^[ \t]*"(.*)",?[ \t]*$/.exec(line)?.[1])
+    .filter((value): value is string => value !== undefined)
+    .map((value) =>
+      value.replace('${regex("^https://[^/]+", var.payment_api_url)}', 'https://api.example.test'),
+    );
+}
+
+// Policy body without its name and comment, so two policies compare on header content only.
+function normalizePolicy(body: string): string {
+  return body
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !/^(name|comment)[ \t]*=/.test(line))
+    .join('\n');
+}
+
 const files = readRootModule();
 const codeFiles: Record<string, string> = Object.fromEntries(
   Object.entries(files).map(([name, text]) => [name, stripFullLineComments(text)]),
@@ -301,6 +336,8 @@ describe('infra/*.tf root module (static)', () => {
       resourcesOf('aws_cloudfront_response_headers_policy'),
       'security',
     );
+    const docsPolicy = findBlock(resourcesOf('aws_cloudfront_response_headers_policy'), 'docs');
+    const localsText = localsBodyOf(code);
 
     it('does not use custom error responses', () => {
       expect(code).not.toMatch(/custom_error_response/);
@@ -321,19 +358,114 @@ describe('infra/*.tf root module (static)', () => {
       expect(headersPolicy.body).toMatch(pattern);
     });
 
-    it('locks down base-uri, object-src, frame-ancestors and form-action in the CSP', () => {
-      const csp = headersPolicy.body;
-      expect(csp).toContain(`"base-uri 'self'"`);
-      expect(csp).toContain(`"object-src 'none'"`);
-      expect(csp).toContain(`"frame-ancestors 'none'"`);
-      expect(csp).toContain(`"form-action 'self'"`);
-      expect(csp).toContain(`"img-src 'self'"`);
-      expect(csp).not.toMatch(/unsafe-inline|unsafe-eval|data:/);
+    it('reads the security CSP and the shared header values from locals', () => {
+      expect(headersPolicy.body).toMatch(/content_security_policy[ \t]*=[ \t]*local\.csp_security/);
+      expect(headersPolicy.body).toMatch(
+        /access_control_max_age_sec[ \t]*=[ \t]*local\.hsts_max_age_seconds/,
+      );
+      expect(headersPolicy.body).toMatch(/frame_option[ \t]*=[ \t]*local\.frame_option/);
+      expect(headersPolicy.body).toMatch(/referrer_policy[ \t]*=[ \t]*local\.referrer_policy/);
+      expect(headersPolicy.body).toMatch(/value[ \t]*=[ \t]*local\.permissions_policy/);
     });
+
+    it('locks down base-uri, object-src, frame-ancestors and form-action in the CSP', () => {
+      expect(localsText).toContain(`"base-uri 'self'"`);
+      expect(localsText).toContain(`"object-src 'none'"`);
+      expect(localsText).toContain(`"frame-ancestors 'none'"`);
+      expect(localsText).toContain(`"form-action 'self'"`);
+      expect(localsText).toContain(`"img-src 'self'"`);
+      expect(localsText).not.toMatch(/unsafe-inline|unsafe-eval/);
+    });
+
     it('limits connect-src to the origin of payment_api_url, not the full path', () => {
-      const csp = headersPolicy.body;
-      expect(csp).toContain(`\${regex("^https://[^/]+", var.payment_api_url)}`);
-      expect(csp).not.toMatch(/connect-src 'self' \$\{var\.payment_api_url\}/);
+      expect(localsText).toContain(`\${regex("^https://[^/]+", var.payment_api_url)}`);
+      expect(localsText).not.toMatch(/connect-src 'self' \$\{var\.payment_api_url\}/);
+    });
+
+    it('resolves the security CSP to the expected directives', () => {
+      expect(cspDirectivesOf(localsText)).toEqual([
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "img-src 'self'",
+        "connect-src 'self' https://api.example.test",
+        "base-uri 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+      ]);
+    });
+
+    it('keeps the security header values', () => {
+      expect(localsText).toMatch(/hsts_max_age_seconds[ \t]*=[ \t]*31536000/);
+      expect(localsText).toMatch(/frame_option[ \t]*=[ \t]*"DENY"/);
+      expect(localsText).toMatch(/referrer_policy[ \t]*=[ \t]*"strict-origin-when-cross-origin"/);
+      expect(localsText).toMatch(
+        /permissions_policy[ \t]*=[ \t]*"camera=\(\), microphone=\(\), geolocation=\(\), payment=\(\)"/,
+      );
+    });
+
+    it('defines the docs policy with the same blocks as the security policy, except the CSP reference', () => {
+      expect(normalizePolicy(headersPolicy.body)).toContain('strict_transport_security {');
+      expect(normalizePolicy(docsPolicy.body)).toBe(
+        normalizePolicy(headersPolicy.body).replace(
+          'content_security_policy = local.csp_security',
+          'content_security_policy = local.csp_docs',
+        ),
+      );
+      expect(docsPolicy.body).toContain('content_security_policy = local.csp_docs');
+    });
+
+    it('differs from the security CSP only in img-src', () => {
+      const directives = cspDirectivesOf(localsText);
+      const docsDirectives = directives.map((directive) =>
+        directive === "img-src 'self'" ? "img-src 'self' data:" : directive,
+      );
+      expect(docsDirectives.filter((directive, index) => directive !== directives[index])).toEqual([
+        "img-src 'self' data:",
+      ]);
+      expect(localsText).toContain(
+        `csp_docs = join("; ", [\n    for directive in local.csp_directives :\n    directive == "img-src 'self'" ? "img-src 'self' data:" : directive\n  ])`,
+      );
+    });
+
+    it('serves /docs and /docs/* from the S3 origin with the docs policy and the docs index function', () => {
+      const behaviors = nestedBlocksOf(distribution.body, 'ordered_cache_behavior');
+      for (const pattern of ['/docs', '/docs/*']) {
+        const behavior = behaviors.find(
+          (block) => attribute(topLevel(block.body), 'path_pattern') === `"${pattern}"`,
+        );
+        expect(behavior).toBeDefined();
+        const level = topLevel(behavior?.body ?? '');
+        expect(attribute(level, 'target_origin_id')).toBe('local.s3_origin_id');
+        expect(attribute(level, 'viewer_protocol_policy')).toBe('"redirect-to-https"');
+        expect(attribute(level, 'allowed_methods')).toBe('["GET", "HEAD", "OPTIONS"]');
+        expect(attribute(level, 'response_headers_policy_id')).toBe(
+          'aws_cloudfront_response_headers_policy.docs.id',
+        );
+        expect(behavior?.body).toMatch(
+          /function_arn[ \t]*=[ \t]*aws_cloudfront_function\.docs_index_rewrite\.arn/,
+        );
+        expect(behavior?.body).not.toContain('aws_cloudfront_function.spa_rewrite');
+        expect(behavior?.body).not.toMatch(/origin_request_policy_id/);
+      }
+    });
+
+    it('places both docs behaviors before the /api/* behavior', () => {
+      const behaviors = nestedBlocksOf(distribution.body, 'ordered_cache_behavior');
+      const order = behaviors.map((block) => attribute(topLevel(block.body), 'path_pattern'));
+      const apiIndex = order.indexOf('"/api/*"');
+      expect(apiIndex).toBeGreaterThan(-1);
+      expect(order.indexOf('"/docs"')).toBeGreaterThan(-1);
+      expect(order.indexOf('"/docs"')).toBeLessThan(apiIndex);
+      expect(order.indexOf('"/docs/*"')).toBeGreaterThan(-1);
+      expect(order.indexOf('"/docs/*"')).toBeLessThan(apiIndex);
+    });
+
+    it('never attaches spa_rewrite to any ordered behavior', () => {
+      for (const behavior of nestedBlocksOf(distribution.body, 'ordered_cache_behavior')) {
+        expect(behavior.body).not.toContain('aws_cloudfront_function.spa_rewrite');
+      }
     });
 
     it('sends the origin secret as X-Origin-Verify from random_password', () => {

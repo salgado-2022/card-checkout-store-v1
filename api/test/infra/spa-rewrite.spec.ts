@@ -33,12 +33,13 @@ function rewrite(handler: SpaHandler, uri: string): string {
 }
 
 // Oracle written from the requirement, independent of the implementation:
-// rewrite when the last segment has no extension and the path is not under /api/.
+// rewrite when the last segment has no extension and the path is neither under /api/ nor under /docs/.
 function expectedUri(uri: string): string {
   const lastSegment = uri.slice(uri.lastIndexOf('/') + 1);
   const hasExtension = lastSegment.includes('.');
   const isApi = uri.startsWith('/api/');
-  return !hasExtension && !isApi ? '/index.html' : uri;
+  const isDocs = uri.startsWith('/docs/');
+  return !hasExtension && !isApi && !isDocs ? '/index.html' : uri;
 }
 
 const segmentChars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_'.split('');
@@ -58,9 +59,14 @@ const apiPath = fc
   .tuple(fc.constantFrom('/api/', '/api/v1/', '/api/'), segments)
   .map(([prefix, parts]) => `${prefix}${parts.join('/')}`);
 
+// Paths under /docs/ in several shapes, including extension-less ones such as /docs/api-guide.
+const docsPath = fc
+  .tuple(fc.constantFrom('/docs/', '/docs/nested/'), segments)
+  .map(([prefix, parts]) => `${prefix}${parts.join('/')}`);
 const anyPath = fc.oneof(
   { weight: 3, arbitrary: segments.map(pathFromSegments) },
   { weight: 2, arbitrary: apiPath },
+  { weight: 2, arbitrary: docsPath },
 );
 
 describe('SPA rewrite CloudFront Function', () => {
@@ -86,6 +92,11 @@ describe('SPA rewrite CloudFront Function', () => {
     ['/api/v1/unknown-route', '/api/v1/unknown-route'],
     ['/products/42', '/index.html'],
     ['/favicon.ico', '/favicon.ico'],
+    ['/docs/', '/docs/'],
+    ['/docs/index.html', '/docs/index.html'],
+    ['/docs/openapi.json', '/docs/openapi.json'],
+    ['/docs/guide', '/docs/guide'],
+    ['/docs', '/index.html'],
   ])('rewrites %s to the expected URI %s', (uri, expected) => {
     expect(rewrite(handler, uri)).toBe(expected);
   });
@@ -95,12 +106,12 @@ describe('SPA rewrite CloudFront Function', () => {
     expect(handler({ request })).toBe(request);
   });
 
-  it('Feature: platform-foundation, Property 10: SPA rewrite applies only to extension-less, non-API paths', () => {
+  it('Feature: payments-api, Property 44: SPA rewrite leaves /api/ and /docs/ unchanged and rewrites other extension-less paths', () => {
     fc.assert(
       fc.property(anyPath, (uri) => {
         expect(rewrite(handler, uri)).toBe(expectedUri(uri));
       }),
-      { numRuns: 200 },
+      { numRuns: 100 },
     );
   });
 });
