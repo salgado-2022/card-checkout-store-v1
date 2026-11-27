@@ -161,56 +161,56 @@ Conventions for every task:
 ### Branch `feat/HU-09-customers-acceptance`
 
 - [ ] 2. Customers, provider call policy and acceptance tokens
-  - [ ] 2.1 Log masking in the application logger
+  - [x] 2.1 Log masking in the application logger
     - Create `api/src/infrastructure/http/logging/mask.ts`: `maskEmail` keeps the first character of the local part, then `***`, then the unchanged domain; `maskDocumentNumber` replaces every character except the last 3 with `*` and keeps the length. Apply both automatically to the fields named `email`, `customerEmail`, `documentNumber` in the `ApplicationLogger` adapter and the JSON logger, so no use case has to remember to mask.
     - Tests: examples (`john.doe@example.com` → `j***@example.com`, `1234567890` → `*******890`), short values, and the adapter output never contains the raw value.
     - _Requirements: 14.3, 14.4, 14.5_
-  - [ ] 2.2 DynamoDB customer repository adapter
+  - [x] 2.2 DynamoDB customer repository adapter
     - Create `api/src/infrastructure/persistence/customer.repository.dynamodb.ts`: `findByEmail` queries the GSI `email`, `findById` uses `GetCommand`, `upsert` creates a new item with `id` from `IdGenerator`, `createdAt` and `updatedAt` (conditional put on `attribute_not_exists(id)`) or updates `fullName`, `phone`, `documentType`, `documentNumber` and `updatedAt` while keeping `id` and `createdAt`; it returns whether the record was created. Any SDK exception becomes `Err({ kind: 'REPOSITORY_ERROR' })`.
     - Tests with `aws-sdk-client-mock`: create path, update path, GSI query shape, SDK failure.
     - _Requirements: 3.1, 3.2, 3.3, 17.8, 17.9_
-  - [ ] 2.3 Use cases UpsertCustomer and GetCustomer
+  - [x] 2.3 Use cases UpsertCustomer and GetCustomer
     - Create `upsert-customer.ts` (normalize the email by trimming and lower-casing before lookup and storage, call `upsert`, return `{ customer, created }`, write an `info` log with the customer id and the email) and `get-customer.ts` (`null` gives `CUSTOMER_NOT_FOUND`).
     - Tests with fakes: new email creates, same email with different case and spaces updates the same record, not found, repository error.
     - _Requirements: 3.1, 3.2, 3.3, 3.9, 3.10, 17.3, 17.4_
-  - [ ] 2.4 Customers DTO, controller and wiring
+  - [x] 2.4 Customers DTO, controller and wiring
     - Create `create-customer.dto.ts` with `class-validator` rules: `fullName` 3–80, `email` valid and at most 120, `phone` `^3\d{9}$`, `documentType` in CC/CE/NIT/PP, `documentNumber` conditional on the type (CC and CE 6–10 digits, NIT 9–10 digits, PP 6–12 alphanumeric), with `@ApiProperty` decorators. Create `CustomersController` (`POST /customers` answers 201 or 200, `GET /customers/:id`) returning `id`, `email`, `fullName`, `phone`, `documentType`, `documentNumber`, `createdAt`, `updatedAt`. Register in `app.module.ts`.
     - supertest tests: 201, then 200 on update, each invalid field gives 400 `VALIDATION_ERROR` with `details` naming the field and rule, unknown property rejected, 404 `CUSTOMER_NOT_FOUND`.
     - _Requirements: 3.1, 3.2, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10, 13.7, 13.9, 18.1_
-  - [ ] 2.5 Provider call policy with its two profiles
+  - [x] 2.5 Provider call policy with its two profiles
     - Create `api/src/infrastructure/payment/provider-call-policy.ts` with two named wrappers around one `AbortController`-based attempt primitive, both returning `ResultAsync<Response, PaymentGatewayError>`: `withStandardProfile(fn)` (timeout 10 s per attempt, exactly one retry after a 500 ms backoff, retry only on timeout or HTTP 5xx, never on 4xx, never a third attempt; used by `create` and `getAcceptanceTokens`) and `withSingleAttemptProfile(fn)` (timeout 3 s, exactly one attempt, no retry under any outcome; used by `getStatus` and `findByReference`). The error records whether a 4xx came after a transient failure (`afterTransientFailure`). Timeouts and the backoff are injectable so tests use fake timers.
     - Tests with Jest fake timers: Standard_Profile success first try, 5xx then success, timeout then success, 5xx twice gives `UNAVAILABLE`, 4xx is not retried, 5xx then 4xx gives `REJECTED` with `afterTransientFailure: true`; Single_Attempt_Profile timeout at 3 s gives `UNAVAILABLE` with no second attempt, 5xx and 4xx each make exactly one attempt.
     - _Requirements: 4.2, 4.3, 8.3, 9.3_
-  - [ ] 2.6 Payment gateway adapter base and acceptance tokens
+  - [x] 2.6 Payment gateway adapter base and acceptance tokens
     - Generalize the existing `origin-secret.provider.ts` SSM cache pattern into a reusable parameter reader (module-scope cache by parameter name, loaded once per cold start) and test it with a fake parameter name. Task 3.8 reads `PAYMENT_PRIVATE_KEY_PARAM` and `PAYMENT_INTEGRITY_SECRET_PARAM` through it, and task 6.2 reads `PAYMENT_EVENTS_SECRET_PARAM`, so no code that only the webhook needs lands before branch 6. Keep the origin secret behavior and its tests unchanged.
     - Create `api/src/infrastructure/payment/payment-gateway.adapter.ts` implementing `getAcceptanceTokens` under `withStandardProfile`: `GET {PAYMENT_API_URL}/merchants/{PAYMENT_PUBLIC_KEY}`; map `acceptance_token` and `accept_personal_auth` to `acceptanceToken { token, permalink }` and `acceptPersonalAuth { token, permalink }`; 4xx or exhausted retries give `Err`. Every error carries only a `reason` string (HTTP status or exception class name): no key, secret, token or response body is logged or returned.
     - Tests with `nock` and `aws-sdk-client-mock` (SSM): mapping, 4xx, 5xx twice, secrets never appear in error values or log output.
     - _Requirements: 4.1, 4.2, 4.3, 7.8, 7.9_
-  - [ ] 2.7 GetAcceptanceTokens use case, controller and wiring
+  - [x] 2.7 GetAcceptanceTokens use case, controller and wiring
     - Create `get-acceptance-tokens.ts` (calls the port, maps a gateway error to `PAYMENT_PROVIDER_ERROR`) and `AcceptanceTokensController` (`GET /acceptance-tokens`, response DTO and swagger decorators, 200 and 502). Register the controller, the adapter and the use case in `app.module.ts`.
     - Tests: use case with the fake gateway; supertest 200 shape and 502 `PAYMENT_PROVIDER_ERROR` with the fixed message.
     - _Requirements: 4.1, 4.2, 13.9, 17.3, 18.1_
-  - [ ] 2.8 Property test for the customer upsert round trip
+  - [x] 2.8 Property test for the customer upsert round trip
     - **Property 6: Customer upsert is a normalized-email round trip**
     - **Validates: Requirements 3.1, 3.2, 3.3**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over valid customers and email variants (case, surrounding whitespace): the second upsert keeps `id` and `createdAt` and answers "updated"; a never-seen normalized email always creates.
     - _Requirements: 3.1, 3.2, 3.3, 21.17_
-  - [ ] 2.9 Property test for log masking
+  - [x] 2.9 Property test for log masking
     - **Property 39: Log masking is a pure, lossy function of its input**
     - **Validates: Requirements 14.4, 14.5**
     - `fast-check` with `numRuns: 100` (pure function): email output is the first local-part character, `***`, then the unchanged domain; document output keeps length and the last three characters and replaces the rest with `*`.
     - _Requirements: 14.4, 14.5, 21.17_
-  - [ ] 2.10 Property test for unknown properties on customers
+  - [x] 2.10 Property test for unknown properties on customers
     - **Property 8: Unknown or malformed request bodies are rejected on customers and transactions (customers part)**
     - **Validates: Requirements 14.6**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) adds an undeclared property (including `amount`-shaped names) to valid `POST /customers` bodies: 400 `VALIDATION_ERROR` and no write. The transactions part of this property is task 3.16.
     - _Requirements: 14.6, 21.17, 21.18_
-  - [ ] 2.11 Property test for the provider resilience policy
+  - [x] 2.11 Property test for the provider resilience policy
     - **Property 9: Provider resilience policy is profile-specific (policy and Standard_Profile part)**
     - **Validates: Requirements 4.2, 4.3**
     - `fast-check` with `numRuns: 100` (adapter level, `nock` and fake timers, no HTTP) over sequences of simulated attempt outcomes (success, 4xx, 5xx, timeout): under `withStandardProfile` and through the real `getAcceptanceTokens`, a second attempt happens if and only if the first timed out or returned 5xx, never after a 4xx, never a third attempt; under `withSingleAttemptProfile` exactly one attempt with a 3 s timeout is made for every outcome. The adapter-level Single_Attempt part for `getStatus` and `findByReference` is task 4.15.
     - _Requirements: 4.2, 4.3, 21.17_
-  - [ ] 2.12 Checkpoint, `feat/HU-09-customers-acceptance`
+  - [x] 2.12 Checkpoint, `feat/HU-09-customers-acceptance`
     - Run `npm run lint`, `npx tsc --noEmit`, `npm test -- --coverage` (all four metrics at least 80), `npm run build`, `npm run depcruise`, `bash scripts/check-forbidden-words.sh` (no findings). No infra change in this branch.
     - Ensure all tests pass, ask the user if questions arise.
     - _Requirements: 17.6, 21.1_
