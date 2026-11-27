@@ -1,19 +1,16 @@
-import type { ArgumentsHost } from '@nestjs/common';
+import type { ArgumentsHost, INestApplication } from '@nestjs/common';
 import {
-  BadGatewayException,
   BadRequestException,
   Controller,
-  ConflictException,
   ForbiddenException,
   Get,
   HttpException,
   NotFoundException,
   UnauthorizedException,
-  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import type { INestApplication } from '@nestjs/common';
+import { toHttpException } from '../error-catalog';
 import { ResultExceptionFilter } from './result-exception.filter';
 
 interface FakeLogger {
@@ -54,17 +51,18 @@ function catchAndRespond(
 }
 
 describe('ResultExceptionFilter', () => {
-  describe('HttpException mapping', () => {
-    it('maps NotFoundException to 404 NOT_FOUND and keeps its message', () => {
-      const { status, body } = catchAndRespond(new NotFoundException('Cannot GET /x'));
+  describe('framework HttpException mapping', () => {
+    it('maps an unknown route (NotFoundException) to 404 ROUTE_NOT_FOUND without echoing the path', () => {
+      const { status, body } = catchAndRespond(new NotFoundException('Cannot GET /secret/path'));
 
       expect(status).toHaveBeenCalledWith(404);
       expect(body).toEqual({
         statusCode: 404,
-        code: 'NOT_FOUND',
-        message: 'Cannot GET /x',
+        code: 'ROUTE_NOT_FOUND',
+        message: 'Route not found.',
         details: [],
       });
+      expect(JSON.stringify(body)).not.toContain('secret/path');
     });
 
     it('maps a validation BadRequestException to 400 VALIDATION_ERROR with rule messages in details', () => {
@@ -76,98 +74,99 @@ describe('ResultExceptionFilter', () => {
       expect(body).toEqual({
         statusCode: 400,
         code: 'VALIDATION_ERROR',
-        message: 'Bad Request Exception',
+        message: 'Request validation failed.',
         details: ['name must be a string', 'quantity must not be less than 1'],
       });
     });
 
-    it('maps UnauthorizedException to 401 UNAUTHORIZED', () => {
-      const { status, body } = catchAndRespond(new UnauthorizedException('Bad credentials'));
+    it('maps a validation BadRequestException whose body is a plain string to 400 with no details', () => {
+      const { body } = catchAndRespond(new BadRequestException('Bad input'));
 
-      expect(status).toHaveBeenCalledWith(401);
-      expect(body).toMatchObject({
-        statusCode: 401,
-        code: 'UNAUTHORIZED',
-        message: 'Bad credentials',
+      expect(body).toEqual({
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+        message: 'Request validation failed.',
+        details: [],
       });
     });
 
-    it('maps ForbiddenException to 403 FORBIDDEN', () => {
-      const { status, body } = catchAndRespond(new ForbiddenException('Nope'));
-
-      expect(status).toHaveBeenCalledWith(403);
-      expect(body).toMatchObject({ statusCode: 403, code: 'FORBIDDEN', message: 'Nope' });
-    });
-
-    it('maps ConflictException to 409 CONFLICT', () => {
-      const { status, body } = catchAndRespond(new ConflictException('Already exists'));
-
-      expect(status).toHaveBeenCalledWith(409);
-      expect(body).toMatchObject({ statusCode: 409, code: 'CONFLICT', message: 'Already exists' });
-    });
-
-    it('maps UnprocessableEntityException to 422 UNPROCESSABLE_ENTITY', () => {
-      const { status, body } = catchAndRespond(new UnprocessableEntityException('Reused key'));
-
-      expect(status).toHaveBeenCalledWith(422);
-      expect(body).toMatchObject({
-        statusCode: 422,
-        code: 'UNPROCESSABLE_ENTITY',
-        message: 'Reused key',
-      });
-    });
-
-    it('maps a string-bodied HttpException with status 429 to TOO_MANY_REQUESTS', () => {
+    it('maps a string-bodied HttpException with status 429 to TOO_MANY_REQUESTS with the fixed message', () => {
       const { status, body } = catchAndRespond(new HttpException('Slow down', 429));
 
       expect(status).toHaveBeenCalledWith(429);
       expect(body).toEqual({
         statusCode: 429,
         code: 'TOO_MANY_REQUESTS',
-        message: 'Slow down',
+        message: 'Too many requests.',
         details: [],
       });
     });
 
-    it('maps BadGatewayException to 502 BAD_GATEWAY', () => {
-      const { status, body } = catchAndRespond(new BadGatewayException('Upstream failed'));
+    it.each([
+      ['UnauthorizedException', new UnauthorizedException('Bad credentials')],
+      ['ForbiddenException', new ForbiddenException('Nope')],
+      ['HttpException 418', new HttpException('Teapot', 418)],
+      ['HttpException 502', new HttpException({ message: 'Upstream' }, 502)],
+    ])(
+      'maps %s, which has no catalog code, to 500 INTERNAL_ERROR without its message',
+      (_label, exception) => {
+        const { status, body, logger } = catchAndRespond(exception);
 
-      expect(status).toHaveBeenCalledWith(502);
-      expect(body).toMatchObject({
-        statusCode: 502,
-        code: 'BAD_GATEWAY',
-        message: 'Upstream failed',
-      });
-    });
+        expect(status).toHaveBeenCalledWith(500);
+        expect(body).toEqual({
+          statusCode: 500,
+          code: 'INTERNAL_ERROR',
+          message: 'Internal server error.',
+          details: [],
+        });
+        expect(logger.error).toHaveBeenCalledTimes(1);
+      },
+    );
 
-    it('maps an HttpException with an unlisted status to HTTP_ERROR and keeps the status', () => {
-      const { status, body } = catchAndRespond(new HttpException('Teapot', 418));
-
-      expect(status).toHaveBeenCalledWith(418);
-      expect(body).toMatchObject({ statusCode: 418, code: 'HTTP_ERROR', message: 'Teapot' });
-    });
-
-    it('uses the exception message when an object body has no message field', () => {
-      const exception = new HttpException({ reason: 'x' }, 418);
-      const { body } = catchAndRespond(exception);
+    it('maps an HttpException with status 413 to PAYLOAD_TOO_LARGE with the fixed message', () => {
+      const { body } = catchAndRespond(new HttpException('Too big', 413));
 
       expect(body).toEqual({
-        statusCode: 418,
-        code: 'HTTP_ERROR',
-        message: exception.message,
+        statusCode: 413,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Request body too large.',
         details: [],
       });
     });
 
-    it('uses the exception message when the object body message is neither a string nor an array', () => {
-      const exception = new HttpException({ message: 42 }, 418);
-      const { body } = catchAndRespond(exception);
+    it('maps an HttpException with status 415 to UNSUPPORTED_MEDIA_TYPE', () => {
+      const { status, body } = catchAndRespond(new HttpException('Nope', 415));
 
+      expect(status).toHaveBeenCalledWith(415);
+      expect(body).toMatchObject({ statusCode: 415, code: 'UNSUPPORTED_MEDIA_TYPE' });
+    });
+  });
+
+  describe('catalog exceptions', () => {
+    it('passes a catalog envelope through unchanged', () => {
+      const { status, body } = catchAndRespond(toHttpException({ kind: 'PRODUCT_NOT_FOUND' }));
+
+      expect(status).toHaveBeenCalledWith(404);
       expect(body).toEqual({
-        statusCode: 418,
-        code: 'HTTP_ERROR',
-        message: exception.message,
+        statusCode: 404,
+        code: 'PRODUCT_NOT_FOUND',
+        message: 'Product not found.',
         details: [],
+      });
+    });
+
+    it('logs the source kind of a catalog exception on the server side', () => {
+      const { logger } = catchAndRespond(
+        toHttpException({ kind: 'REPOSITORY_ERROR', reason: 'X' }),
+      );
+
+      expect(logger.error).toHaveBeenCalledWith('Request failed', {
+        requestId: 'req-1',
+        statusCode: 500,
+        code: 'INTERNAL_ERROR',
+        errorName: 'CatalogHttpException',
+        kind: 'REPOSITORY_ERROR',
+        errorMessage: 'Internal server error.',
       });
     });
   });
@@ -175,6 +174,7 @@ describe('ResultExceptionFilter', () => {
   describe('body-parser errors', () => {
     const bodyParserError = (type: string, message: string, status: number): Error =>
       Object.assign(new SyntaxError(message), { type, status, statusCode: status });
+
     it('maps entity.parse.failed to 400 VALIDATION_ERROR with a fixed message', () => {
       const original = 'Unexpected token h in JSON at position 7: {"card":"hunter2"';
       const { status, body, logger } = catchAndRespond(
@@ -196,6 +196,7 @@ describe('ResultExceptionFilter', () => {
         errorName: 'SyntaxError',
       });
     });
+
     it('maps entity.too.large to 413 PAYLOAD_TOO_LARGE with a fixed message', () => {
       const original = 'request entity too large: 204800 > 102400 secret-detail';
       const { status, body, logger } = catchAndRespond(
@@ -211,24 +212,79 @@ describe('ResultExceptionFilter', () => {
       expect(logger.error).not.toHaveBeenCalled();
       expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('secret-detail');
     });
+
+    it.each(['encoding.unsupported', 'charset.unsupported'])(
+      'maps %s to 415 UNSUPPORTED_MEDIA_TYPE without echoing the original message',
+      (type) => {
+        const { status, body, logger } = catchAndRespond(
+          bodyParserError(type, 'unsupported "x-secret-detail"', 415),
+        );
+        expect(status).toHaveBeenCalledWith(415);
+        expect(body).toMatchObject({
+          statusCode: 415,
+          code: 'UNSUPPORTED_MEDIA_TYPE',
+          details: [],
+        });
+        expect(JSON.stringify(body)).not.toContain('secret-detail');
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('secret-detail');
+      },
+    );
+
+    it.each(['request.aborted', 'request.size.invalid', 'parameters.too.many'])(
+      'maps %s to 400 VALIDATION_ERROR with a fixed message',
+      (type) => {
+        const { status, body, logger } = catchAndRespond(
+          bodyParserError(type, 'raw detail secret-detail', 400),
+        );
+        expect(status).toHaveBeenCalledWith(400);
+        expect(body).toEqual({
+          statusCode: 400,
+          code: 'VALIDATION_ERROR',
+          message: 'Request body could not be read.',
+          details: [],
+        });
+        expect(logger.error).not.toHaveBeenCalled();
+      },
+    );
+
+    it('maps an untyped exposed 400 (failed decompression) to 400 VALIDATION_ERROR', () => {
+      const zlibError = Object.assign(new Error('incorrect header check secret-detail'), {
+        status: 400,
+        statusCode: 400,
+        expose: true,
+      });
+      const { status, body, logger } = catchAndRespond(zlibError);
+      expect(status).toHaveBeenCalledWith(400);
+      expect(body).toEqual({
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+        message: 'Request body could not be read.',
+        details: [],
+      });
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('secret-detail');
+    });
+
+    it('keeps an untyped 400 without expose, or an exposed non-400, as INTERNAL_ERROR', () => {
+      const noExpose = Object.assign(new Error('x'), { status: 400 });
+      const exposed500 = Object.assign(new Error('x'), { status: 500, expose: true });
+      expect(catchAndRespond(noExpose).body).toMatchObject({ code: 'INTERNAL_ERROR' });
+      expect(catchAndRespond(exposed500).body).toMatchObject({ code: 'INTERNAL_ERROR' });
+    });
+
     it('ignores other `type` values and treats the error as unknown', () => {
       const { status, body } = catchAndRespond(bodyParserError('something.else', 'boom', 400));
       expect(status).toHaveBeenCalledWith(500);
       expect(body).toMatchObject({ code: 'INTERNAL_ERROR' });
     });
+
     it('does not fail on null or primitive exceptions', () => {
       expect(catchAndRespond(null).body).toMatchObject({ code: 'INTERNAL_ERROR' });
       expect(catchAndRespond(undefined).body).toMatchObject({ code: 'INTERNAL_ERROR' });
     });
-    it('maps an HttpException with status 413 to PAYLOAD_TOO_LARGE', () => {
-      const { body } = catchAndRespond(new HttpException('Too big', 413));
-      expect(body).toMatchObject({
-        statusCode: 413,
-        code: 'PAYLOAD_TOO_LARGE',
-        message: 'Too big',
-      });
-    });
   });
+
   describe('unknown errors', () => {
     it('maps an Error to 500 INTERNAL_ERROR with a generic message and never echoes the original message', () => {
       const { status, body } = catchAndRespond(new Error('password=hunter2 in table X'));
@@ -255,6 +311,7 @@ describe('ResultExceptionFilter', () => {
     it.each([
       ['HttpException', new NotFoundException('missing')],
       ['unknown Error', new Error('kaboom')],
+      ['catalog exception', toHttpException({ kind: 'INSUFFICIENT_STOCK', available: 0 })],
     ])('returns exactly the four envelope keys without stack for %s', (_label, exception) => {
       const { body } = catchAndRespond(exception);
 
@@ -290,10 +347,11 @@ describe('ResultExceptionFilter', () => {
       expect(logger.warn).toHaveBeenCalledWith('Request rejected', {
         requestId: undefined,
         statusCode: 404,
-        code: 'NOT_FOUND',
+        code: 'ROUTE_NOT_FOUND',
         errorName: 'NotFoundException',
       });
     });
+
     it('never logs the message of a 4xx error, which may echo client input', () => {
       const { logger } = catchAndRespond(new BadRequestException('field "password" was hunter2'), {
         requestId: 'r',
@@ -340,7 +398,7 @@ describe('ResultExceptionFilter', () => {
 class FilterProbeController {
   @Get('not-found')
   notFound(): never {
-    throw new NotFoundException('Product not found');
+    throw toHttpException({ kind: 'PRODUCT_NOT_FOUND' });
   }
 
   @Get('crash')
@@ -375,22 +433,28 @@ describe('ResultExceptionFilter over HTTP', () => {
     stdout.mockRestore();
   });
 
-  it('answers an unknown route with the 404 NOT_FOUND envelope', async () => {
-    const response = await request(app.getHttpServer()).get('/unknown-route');
+  it('answers an unknown route with the 404 ROUTE_NOT_FOUND envelope and no echoed path', async () => {
+    const response = await request(app.getHttpServer()).get('/unknown-route-xyz');
 
     expect(response.status).toBe(404);
-    expect(response.body).toMatchObject({ statusCode: 404, code: 'NOT_FOUND', details: [] });
+    expect(response.body).toEqual({
+      statusCode: 404,
+      code: 'ROUTE_NOT_FOUND',
+      message: 'Route not found.',
+      details: [],
+    });
+    expect(response.text).not.toContain('unknown-route-xyz');
     expect(response.body).not.toHaveProperty('stack');
   });
 
-  it('answers a thrown HttpException with its status and envelope', async () => {
+  it('answers a thrown catalog exception with its status and envelope', async () => {
     const response = await request(app.getHttpServer()).get('/filter-probe/not-found');
 
     expect(response.status).toBe(404);
     expect(response.body).toEqual({
       statusCode: 404,
-      code: 'NOT_FOUND',
-      message: 'Product not found',
+      code: 'PRODUCT_NOT_FOUND',
+      message: 'Product not found.',
       details: [],
     });
   });

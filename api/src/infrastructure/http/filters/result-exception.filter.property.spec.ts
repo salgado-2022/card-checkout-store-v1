@@ -96,9 +96,11 @@ const plainErrorScenario: fc.Arbitrary<Scenario> = fc
 
 // Http messages come from the client side of the contract, so the secret goes only into extra body
 // properties, cause and stack. Nest echoes `message`, which is expected behavior.
+// Only statuses that have a catalog code keep their status. Any other HttpException status maps to
+// 500 INTERNAL_ERROR, which the example tests cover.
 const httpErrorScenario: fc.Arbitrary<Scenario> = fc
   .tuple(
-    fc.integer({ min: 400, max: 599 }),
+    fc.constantFrom(400, 404, 413, 415, 429),
     fc.constantFrom('string', 'object', 'array'),
     safeText,
     fc.array(safeText, { maxLength: 3 }),

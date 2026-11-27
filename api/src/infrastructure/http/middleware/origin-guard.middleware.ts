@@ -5,6 +5,7 @@ import {
   ORIGIN_SECRET_PROVIDER,
   type OriginSecretSource,
 } from '../../config/origin-secret.provider';
+import { envelopeFor } from '../error-catalog';
 import { JsonLogger } from '../logging/json-logger';
 import { timingSafeEqualStrings } from '../security/timing-safe-equal';
 import type { RequestWithId } from './request-id.middleware';
@@ -19,12 +20,7 @@ export interface OriginGuardLogger {
   error(message: string, fields: Record<string, unknown>): void;
 }
 
-const FORBIDDEN_BODY = JSON.stringify({
-  statusCode: 403,
-  code: 'FORBIDDEN_ORIGIN',
-  message: 'Origin not allowed.',
-  details: [],
-});
+const FORBIDDEN_BODY = JSON.stringify(envelopeFor('FORBIDDEN_ORIGIN'));
 
 // Structurally matches Nest's NestMiddleware contract (`use(req, res, next)`).
 @Injectable()

@@ -1,14 +1,15 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException } from '@nestjs/common';
 import type { Response } from 'express';
+import {
+  CatalogHttpException,
+  type ErrorCode,
+  type ErrorEnvelope,
+  envelopeFor,
+} from '../error-catalog';
 import { JsonLogger } from '../logging/json-logger';
 import type { RequestWithId } from '../middleware/request-id.middleware';
 
-export interface ErrorEnvelope {
-  statusCode: number;
-  code: string;
-  message: string;
-  details: string[];
-}
+export type { ErrorEnvelope } from '../error-catalog';
 
 interface LoggerPort {
   warn(message: string, fields?: Record<string, string | number | undefined>): void;
@@ -16,22 +17,29 @@ interface LoggerPort {
 }
 
 const INTERNAL_ERROR_STATUS = 500;
-const INTERNAL_ERROR_MESSAGE = 'Internal server error.';
 const MALFORMED_JSON_MESSAGE = 'Malformed JSON body.';
-const PAYLOAD_TOO_LARGE_MESSAGE = 'Request body too large.';
+const UNREADABLE_BODY_MESSAGE = 'Request body could not be read.';
 
-// Codes follow the API error table in the design. Statuses outside this table fall back to HTTP_ERROR.
-const CODE_BY_STATUS: Readonly<Record<number, string>> = {
+// body-parser and raw-body error types. Encoding and charset problems are 415; the rest mean the
+// body could not be read and are 400. Their messages can quote the request, so none is reused.
+const UNSUPPORTED_BODY_TYPES: ReadonlySet<string> = new Set([
+  'encoding.unsupported',
+  'charset.unsupported',
+]);
+const UNREADABLE_BODY_TYPES: ReadonlySet<string> = new Set([
+  'request.aborted',
+  'request.size.invalid',
+  'parameters.too.many',
+]);
+
+// Framework HttpExceptions that carry no catalog envelope map to these codes. Any other status
+// is a server-side surprise and becomes INTERNAL_ERROR.
+const CODE_BY_FRAMEWORK_STATUS: Readonly<Partial<Record<number, ErrorCode>>> = {
   400: 'VALIDATION_ERROR',
-  401: 'UNAUTHORIZED',
-  403: 'FORBIDDEN',
-  404: 'NOT_FOUND',
-  409: 'CONFLICT',
+  404: 'ROUTE_NOT_FOUND',
   413: 'PAYLOAD_TOO_LARGE',
-  422: 'UNPROCESSABLE_ENTITY',
+  415: 'UNSUPPORTED_MEDIA_TYPE',
   429: 'TOO_MANY_REQUESTS',
-  500: 'INTERNAL_ERROR',
-  502: 'BAD_GATEWAY',
 };
 
 // Single exception filter: every response uses the fixed envelope and never includes a stack trace.
@@ -44,20 +52,22 @@ export class ResultExceptionFilter implements ExceptionFilter {
     const http = host.switchToHttp();
     const req = http.getRequest<RequestWithId>();
     const res = http.getResponse<Response>();
-
     const envelope = toEnvelope(exception);
-    this.log(exception, envelope, req.requestId);
 
+    this.log(exception, envelope, req.requestId);
     res.status(envelope.statusCode).json(envelope);
   }
 
   private log(exception: unknown, envelope: ErrorEnvelope, requestId: string | undefined): void {
+    const kind = sourceKind(exception);
     const fields = {
       requestId,
       statusCode: envelope.statusCode,
       code: envelope.code,
       errorName: errorName(exception),
+      ...(kind === undefined ? {} : { kind }),
     };
+
     if (envelope.statusCode >= INTERNAL_ERROR_STATUS) {
       this.logger.error('Request failed', { ...fields, errorMessage: errorMessage(exception) });
     } else {
@@ -72,60 +82,61 @@ export class ResultExceptionFilter implements ExceptionFilter {
 function bodyParserEnvelope(exception: unknown): ErrorEnvelope | undefined {
   const type = (exception as { type?: unknown } | null)?.type;
   if (type === 'entity.parse.failed') {
-    return {
-      statusCode: 400,
-      code: 'VALIDATION_ERROR',
-      message: MALFORMED_JSON_MESSAGE,
-      details: [],
-    };
+    return { ...envelopeFor('VALIDATION_ERROR'), message: MALFORMED_JSON_MESSAGE };
   }
   if (type === 'entity.too.large') {
-    return {
-      statusCode: 413,
-      code: 'PAYLOAD_TOO_LARGE',
-      message: PAYLOAD_TOO_LARGE_MESSAGE,
-      details: [],
-    };
+    return envelopeFor('PAYLOAD_TOO_LARGE');
+  }
+  if (typeof type === 'string' && UNSUPPORTED_BODY_TYPES.has(type)) {
+    return envelopeFor('UNSUPPORTED_MEDIA_TYPE');
+  }
+  if (typeof type === 'string' && UNREADABLE_BODY_TYPES.has(type)) {
+    return { ...envelopeFor('VALIDATION_ERROR'), message: UNREADABLE_BODY_MESSAGE };
+  }
+  // A failed decompression (for example a corrupt gzip body) reaches the filter as an untyped
+  // http-errors 400 with `expose: true`. It is a client error, not a server failure.
+  if (type === undefined && isExposedBadRequest(exception)) {
+    return { ...envelopeFor('VALIDATION_ERROR'), message: UNREADABLE_BODY_MESSAGE };
   }
   return undefined;
 }
+
+function isExposedBadRequest(exception: unknown): boolean {
+  if (exception instanceof HttpException) {
+    return false;
+  }
+  const candidate = exception as { status?: unknown; expose?: unknown } | null;
+  return candidate?.status === 400 && candidate.expose === true;
+}
+
 function toEnvelope(exception: unknown): ErrorEnvelope {
   const bodyParser = bodyParserEnvelope(exception);
   if (bodyParser !== undefined) {
     return bodyParser;
   }
-  if (exception instanceof HttpException) {
-    const { message, details } = describeHttpException(exception);
-    const statusCode = exception.getStatus();
-    return {
-      statusCode,
-      code: CODE_BY_STATUS[statusCode] ?? 'HTTP_ERROR',
-      message,
-      details,
-    };
+  if (exception instanceof CatalogHttpException) {
+    return exception.envelope;
   }
-  return {
-    statusCode: INTERNAL_ERROR_STATUS,
-    code: 'INTERNAL_ERROR',
-    message: INTERNAL_ERROR_MESSAGE,
-    details: [],
-  };
+  if (exception instanceof HttpException) {
+    const code = CODE_BY_FRAMEWORK_STATUS[exception.getStatus()];
+    if (code === undefined) {
+      return envelopeFor('INTERNAL_ERROR');
+    }
+    return envelopeFor(code, validationDetails(exception));
+  }
+  return envelopeFor('INTERNAL_ERROR');
 }
 
-// Nest's ValidationPipe passes an array of rule messages as `message`; those become `details`.
-function describeHttpException(exception: HttpException): { message: string; details: string[] } {
+// Nest's ValidationPipe passes an array of rule messages as the body `message`; those become `details`.
+// Any other body shape contributes no details and the fixed catalog message is used.
+function validationDetails(exception: HttpException): string[] {
   const body = exception.getResponse();
-  if (typeof body === 'string') {
-    return { message: body, details: [] };
-  }
-  const raw = (body as { message?: unknown }).message;
-  if (Array.isArray(raw)) {
-    return { message: exception.message, details: raw.map(String) };
-  }
-  if (typeof raw === 'string') {
-    return { message: raw, details: [] };
-  }
-  return { message: exception.message, details: [] };
+  const raw = (body as { message?: unknown } | null)?.message;
+  return Array.isArray(raw) ? raw.map(String) : [];
+}
+
+function sourceKind(exception: unknown): string | undefined {
+  return exception instanceof CatalogHttpException ? exception.kind : undefined;
 }
 
 function errorName(exception: unknown): string {
