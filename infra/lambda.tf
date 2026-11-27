@@ -70,11 +70,11 @@ data "aws_iam_policy_document" "lambda_exec" {
     sid       = "DecryptParametersViaSsm"
     effect    = "Allow"
     actions   = ["kms:Decrypt"]
-    resources = ["arn:aws:kms:us-east-1:${data.aws_caller_identity.current.account_id}:key/*"]
+    resources = ["arn:aws:kms:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:key/*"]
     condition {
       test     = "StringEquals"
       variable = "kms:ViaService"
-      values   = ["ssm.us-east-1.amazonaws.com"]
+      values   = ["ssm.${data.aws_region.current.region}.amazonaws.com"]
     }
   }
   statement {

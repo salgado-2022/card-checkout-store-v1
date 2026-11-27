@@ -1,7 +1,7 @@
 # One-time bootstrap module. Local state only: there is deliberately no
 # backend block, so terraform.tfstate stays on the developer machine and is
-# git-ignored. Resources in this file are added by later tasks (OIDC provider,
-# deploy role and its policy) and must be appended at the end.
+# git-ignored. Resources in this file are added by later tasks (deploy role and
+# its policy) and must be appended at the end.
 
 terraform {
   # S3 native locking (use_lockfile) requires Terraform 1.10 or newer.
@@ -15,9 +15,11 @@ terraform {
   }
 }
 
+# The account only allows us-east-2 for regional services (managed SCPs).
 provider "aws" {
-  region = "us-east-1"
+  region = "us-east-2"
 }
+data "aws_region" "current" {}
 
 # Bucket that holds the remote state of infra/ and the S3 lockfile.
 resource "aws_s3_bucket" "state" {
@@ -80,13 +82,11 @@ resource "aws_s3_bucket_public_access_block" "state" {
   restrict_public_buckets = true
 }
 
-# GitHub Actions OIDC identity provider. thumbprint_list is omitted: AWS provider
-# 6.x makes it optional and AWS validates the GitHub certificate chain itself.
-resource "aws_iam_openid_connect_provider" "github" {
-  url            = "https://token.actions.githubusercontent.com"
-  client_id_list = ["sts.amazonaws.com"]
+# The GitHub Actions OIDC identity provider already exists in the account, so it
+# is referenced by ARN only: no resource, no data source, no import.
+locals {
+  github_oidc_provider_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
 }
-
 # Trust policy of the deploy role: only this repository's master branch and its
 # production environment can assume it. StringEquals only, no wildcards.
 data "aws_iam_policy_document" "deploy_trust" {
@@ -95,7 +95,7 @@ data "aws_iam_policy_document" "deploy_trust" {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [local.github_oidc_provider_arn]
     }
     condition {
       test     = "StringEquals"
@@ -132,16 +132,16 @@ resource "aws_iam_policy" "lambda_boundary" {
         Sid      = "ReadParameters"
         Effect   = "Allow"
         Action   = ["ssm:GetParameter"]
-        Resource = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/*"
+        Resource = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/*"
       },
       {
         Sid      = "DecryptParametersViaSsm"
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
-        Resource = "arn:aws:kms:us-east-1:${data.aws_caller_identity.current.account_id}:key/*"
+        Resource = "arn:aws:kms:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:key/*"
         Condition = {
           StringEquals = {
-            "kms:ViaService" = "ssm.us-east-1.amazonaws.com"
+            "kms:ViaService" = "ssm.${data.aws_region.current.region}.amazonaws.com"
           }
         }
       },
@@ -157,15 +157,15 @@ resource "aws_iam_policy" "lambda_boundary" {
           "dynamodb:Query",
         ]
         Resource = [
-          "arn:aws:dynamodb:us-east-1:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*",
-          "arn:aws:dynamodb:us-east-1:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*/index/*",
+          "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*",
+          "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*/index/*",
         ]
       },
       {
         Sid      = "WriteOwnLogs"
         Effect   = "Allow"
         Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "arn:aws:logs:us-east-1:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-*"
+        Resource = "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-*"
       },
     ]
   })
@@ -299,7 +299,7 @@ resource "aws_iam_role_policy" "deploy" {
           "lambda:TagResource",
           "lambda:UntagResource",
         ]
-        Resource = "arn:aws:lambda:us-east-1:${data.aws_caller_identity.current.account_id}:function:${var.project_name}-*"
+        Resource = "arn:aws:lambda:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:function:${var.project_name}-*"
       },
       {
         Sid    = "DynamoDb"
@@ -319,8 +319,8 @@ resource "aws_iam_role_policy" "deploy" {
           "dynamodb:UntagResource",
         ]
         Resource = [
-          "arn:aws:dynamodb:us-east-1:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*",
-          "arn:aws:dynamodb:us-east-1:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*/index/*",
+          "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*",
+          "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*/index/*",
         ]
       },
       {
@@ -335,7 +335,7 @@ resource "aws_iam_role_policy" "deploy" {
           "ssm:RemoveTagsFromResource",
           "ssm:ListTagsForResource",
         ]
-        Resource = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/origin/*"
+        Resource = "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/origin/*"
       },
       {
         Sid      = "SsmDescribeParameters"
@@ -407,7 +407,7 @@ resource "aws_iam_role_policy" "deploy" {
           "logs:TagLogGroup",
           "logs:UntagLogGroup",
         ]
-        Resource = "arn:aws:logs:us-east-1:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-*"
+        Resource = "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-*"
       },
       {
         Sid      = "LogsDescribeLogGroups"

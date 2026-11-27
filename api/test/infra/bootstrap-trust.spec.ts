@@ -28,7 +28,7 @@ describe('bootstrap deploy role trust policy', () => {
 
   it('trusts only the GitHub OIDC provider as a federated principal', () => {
     expect(policy.principals).toEqual([
-      { type: 'Federated', identifiers: ['aws_iam_openid_connect_provider.github.arn'] },
+      { type: 'Federated', identifiers: ['local.github_oidc_provider_arn'] },
     ]);
   });
 
@@ -51,10 +51,12 @@ describe('bootstrap deploy role trust policy', () => {
     );
   });
 
-  it('defines the OIDC provider with the GitHub URL and the sts client id', () => {
-    const provider = blockText(mainTf, 'resource "aws_iam_openid_connect_provider" "github"');
-    expect(provider).toMatch(/url\s*=\s*"https:\/\/token\.actions\.githubusercontent\.com"/);
-    expect(provider).toMatch(/client_id_list\s*=\s*\["sts\.amazonaws\.com"\]/);
+  it('references the existing OIDC provider by ARN built from the account id', () => {
+    const locals = blockText(mainTf, 'locals {');
+    expect(locals).toContain(
+      'github_oidc_provider_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"',
+    );
+    expect(mainTf).not.toMatch(/aws_iam_openid_connect_provider/);
   });
 
   it('defines the deploy role with a one hour session and the project prefix', () => {

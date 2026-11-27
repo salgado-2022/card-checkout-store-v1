@@ -150,16 +150,16 @@ describe('infra/*.tf root module (static)', () => {
   });
 
   describe('region and backend', () => {
-    it('configures the AWS provider in us-east-1', () => {
+    it('configures the AWS provider in us-east-2', () => {
       const provider = parseBlocks(code, 'provider').find((block) => block.labels[0] === 'aws');
       expect(provider).toBeDefined();
-      expect(attribute(topLevel(provider?.body ?? ''), 'region')).toBe('"us-east-1"');
+      expect(attribute(topLevel(provider?.body ?? ''), 'region')).toBe('"us-east-2"');
     });
 
-    it('uses only us-east-1 as a region literal', () => {
+    it('uses only us-east-2 as a region literal', () => {
       const regions = [...code.matchAll(/region[ \t]*=[ \t]*"([^"]*)"/g)].map((m) => m[1]);
       expect(regions.length).toBeGreaterThan(0);
-      expect(new Set(regions)).toEqual(new Set(['us-east-1']));
+      expect(new Set(regions)).toEqual(new Set(['us-east-2']));
     });
 
     it('declares an s3 backend with use_lockfile and encrypt', () => {
@@ -322,14 +322,18 @@ describe('infra/*.tf root module (static)', () => {
     const statements = nestedBlocksOf(policy?.body ?? '', 'statement');
     const decrypt = statements.find((block) => /"DecryptParametersViaSsm"/.test(block.body));
 
-    it('allows kms:Decrypt only through SSM in us-east-1', () => {
+    it('allows kms:Decrypt only through SSM in the provider region', () => {
       expect(decrypt).toBeDefined();
       const body = decrypt?.body ?? '';
       expect(body).toMatch(/actions[ \t]*=[ \t]*\["kms:Decrypt"\]/);
-      expect(body).toMatch(/resources[ \t]*=[ \t]*\["arn:aws:kms:us-east-1:\$\{[^}]+\}:key\/\*"\]/);
+      expect(body).toMatch(
+        /resources[ \t]*=[ \t]*\["arn:aws:kms:\$\{data\.aws_region\.current\.region\}:\$\{[^}]+\}:key\/\*"\]/,
+      );
       expect(body).toMatch(/test[ \t]*=[ \t]*"StringEquals"/);
       expect(body).toMatch(/variable[ \t]*=[ \t]*"kms:ViaService"/);
-      expect(body).toMatch(/values[ \t]*=[ \t]*\["ssm\.us-east-1\.amazonaws\.com"\]/);
+      expect(body).toMatch(
+        /values[ \t]*=[ \t]*\["ssm\.\$\{data\.aws_region\.current\.region\}\.amazonaws\.com"\]/,
+      );
     });
 
     it('grants no other KMS action', () => {

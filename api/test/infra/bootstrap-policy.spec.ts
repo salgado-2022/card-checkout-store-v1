@@ -255,9 +255,11 @@ describe('infra/bootstrap deploy role policy (static)', () => {
       ].sort(),
     );
     const decrypt = boundary.slice(boundary.indexOf('"DecryptParametersViaSsm"'));
-    expect(decrypt).toMatch(/Resource\s*=\s*"arn:aws:kms:us-east-1:\$\{[^}]+\}:key\/\*"/);
     expect(decrypt).toMatch(
-      /StringEquals\s*=\s*{\s*"kms:ViaService"\s*=\s*"ssm\.us-east-1\.amazonaws\.com"\s*}/,
+      /Resource\s*=\s*"arn:aws:kms:\$\{data\.aws_region\.current\.region\}:\$\{[^}]+\}:key\/\*"/,
+    );
+    expect(decrypt).toMatch(
+      /StringEquals\s*=\s*{\s*"kms:ViaService"\s*=\s*"ssm\.\$\{data\.aws_region\.current\.region\}\.amazonaws\.com"\s*}/,
     );
     expect(boundary).toContain('parameter/${var.project_name}/*');
     expect(boundary).toContain('table/${var.project_name}-*/index/*');
@@ -274,17 +276,17 @@ describe('infra/bootstrap deploy role policy (static)', () => {
         'arn:aws:s3:::${var.project_name}-web-${data.aws_caller_identity.current.account_id}/*',
       ],
       Lambda: [
-        'arn:aws:lambda:us-east-1:${data.aws_caller_identity.current.account_id}:function:${var.project_name}-*',
+        'arn:aws:lambda:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:function:${var.project_name}-*',
       ],
       DynamoDb: [
-        'arn:aws:dynamodb:us-east-1:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*',
-        'arn:aws:dynamodb:us-east-1:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*/index/*',
+        'arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*',
+        'arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*/index/*',
       ],
       SsmOriginParameter: [
-        'arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/origin/*',
+        'arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/origin/*',
       ],
       LogsLambdaLogGroup: [
-        'arn:aws:logs:us-east-1:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-*',
+        'arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.project_name}-*',
       ],
       BudgetsProjectBudget: [
         'arn:aws:budgets::${data.aws_caller_identity.current.account_id}:budget/${var.project_name}-monthly-cost',

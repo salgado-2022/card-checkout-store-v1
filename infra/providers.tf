@@ -25,6 +25,7 @@ terraform {
   }
 }
 
+# The account only allows us-east-2 for regional services (managed SCPs).
 provider "aws" {
-  region = "us-east-1"
+  region = "us-east-2"
 }

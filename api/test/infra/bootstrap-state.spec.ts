@@ -46,12 +46,12 @@ describe('infra/bootstrap state bucket (static)', () => {
     expect(code).not.toMatch(/^\s*backend\s+"/m);
   });
 
-  it('pins the AWS provider and uses us-east-1', () => {
+  it('pins the AWS provider and uses us-east-2', () => {
     const terraformBlock = blockBody(code, 'terraform {');
     expect(terraformBlock).toMatch(/required_providers\s*{/);
     expect(terraformBlock).toMatch(/source\s*=\s*"hashicorp\/aws"/);
     expect(terraformBlock).toMatch(/version\s*=\s*"~> 6\.0"/);
-    expect(blockBody(code, 'provider "aws"')).toMatch(/region\s*=\s*"us-east-1"/);
+    expect(blockBody(code, 'provider "aws"')).toMatch(/region\s*=\s*"us-east-2"/);
   });
 
   it.each(['github_owner', 'github_repo', 'state_bucket_name', 'project_name'])(

@@ -37,7 +37,7 @@ const SAFE_WORDS = [
   'AKIA12',
   'AWS',
   'region',
-  'us-east-1',
+  'us-east-2',
   'destroyed',
   'checkout',
   'true',
