@@ -47,7 +47,9 @@ const breakagesFor = (variableName: string): Breakage[] => {
     return [{ variableName, corruption: 'secret' }];
   }
   const corruptions: Corruption[] =
-    variableName === 'PAYMENT_API_URL'
+    variableName === 'PAYMENT_API_URL' ||
+    variableName === 'PAYMENT_PUBLIC_KEY' ||
+    variableName.endsWith('_PARAM')
       ? ['omit', 'empty', 'whitespace', 'secret']
       : ['omit', 'empty', 'whitespace'];
   return corruptions.map((corruption) => ({ variableName, corruption }));

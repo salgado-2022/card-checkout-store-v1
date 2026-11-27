@@ -4,6 +4,10 @@ export const DEFAULT_BASE_FEE_IN_CENTS = 300000;
 export const DEFAULT_DELIVERY_FEE_IN_CENTS = 800000;
 
 const nonEmptyText = z.string().min(1);
+// SSM parameter names: absolute path made of letters, digits and _ . / - only.
+const ssmParameterName = z.string().regex(/^\/[A-Za-z0-9_./-]+$/);
+// Only the public key (pub_...) may be configured here; a private key (prv_...) is rejected.
+const paymentPublicKey = z.string().regex(/^pub_\S+$/);
 
 // Fees arrive as strings from the environment: digits only, converted to a non-negative integer.
 const feeInCents = (defaultValue: number) =>
@@ -15,12 +19,12 @@ const feeInCents = (defaultValue: number) =>
     .default(defaultValue);
 
 export const envSchema = z.object({
-  PAYMENT_API_URL: z.url(),
-  PAYMENT_PUBLIC_KEY: nonEmptyText,
-  PAYMENT_PRIVATE_KEY_PARAM: nonEmptyText,
-  PAYMENT_INTEGRITY_SECRET_PARAM: nonEmptyText,
-  PAYMENT_EVENTS_SECRET_PARAM: nonEmptyText,
-  ORIGIN_VERIFY_SECRET_PARAM: nonEmptyText,
+  PAYMENT_API_URL: z.url({ protocol: /^https$/ }),
+  PAYMENT_PUBLIC_KEY: paymentPublicKey,
+  PAYMENT_PRIVATE_KEY_PARAM: ssmParameterName,
+  PAYMENT_INTEGRITY_SECRET_PARAM: ssmParameterName,
+  PAYMENT_EVENTS_SECRET_PARAM: ssmParameterName,
+  ORIGIN_VERIFY_SECRET_PARAM: ssmParameterName,
   BASE_FEE_IN_CENTS: feeInCents(DEFAULT_BASE_FEE_IN_CENTS),
   DELIVERY_FEE_IN_CENTS: feeInCents(DEFAULT_DELIVERY_FEE_IN_CENTS),
   DYNAMODB_TABLE_PRODUCTS: nonEmptyText,

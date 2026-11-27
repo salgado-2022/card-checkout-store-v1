@@ -28,6 +28,12 @@ const REQUIRED_VARIABLES = [
   'DYNAMODB_TABLE_IDEMPOTENCY_KEYS',
 ] as const;
 
+const PARAM_VARIABLES = [
+  'PAYMENT_PRIVATE_KEY_PARAM',
+  'PAYMENT_INTEGRITY_SECRET_PARAM',
+  'PAYMENT_EVENTS_SECRET_PARAM',
+  'ORIGIN_VERIFY_SECRET_PARAM',
+] as const;
 describe('loadConfig', () => {
   it('returns the validated config when every variable is valid', () => {
     const result = loadConfig({
@@ -136,6 +142,50 @@ describe('loadConfig', () => {
     });
   });
 
+  it.each([
+    'http://payment.test.example/v1',
+    'ftp://payment.test.example/v1',
+    'HTTP://payment.test.example/v1',
+  ])('returns INVALID_ENV_VAR when the payment API URL is %s (not https)', (value) => {
+    const result = loadConfig({ ...validEnv(), PAYMENT_API_URL: value });
+    expect(result._unsafeUnwrapErr()).toEqual({
+      kind: 'INVALID_ENV_VAR',
+      variableName: 'PAYMENT_API_URL',
+    });
+  });
+  it('accepts an https payment API URL', () => {
+    const result = loadConfig({ ...validEnv(), PAYMENT_API_URL: 'https://payment.test.example' });
+    expect(result.isOk()).toBe(true);
+  });
+  it.each(['prv_test_fake', 'test_fake', 'PUB_test_fake', ' pub_test_fake', 'pub_', 'pub_a b'])(
+    'returns INVALID_ENV_VAR when PAYMENT_PUBLIC_KEY is %j',
+    (value) => {
+      const result = loadConfig({ ...validEnv(), PAYMENT_PUBLIC_KEY: value });
+      expect(result._unsafeUnwrapErr()).toEqual({
+        kind: 'INVALID_ENV_VAR',
+        variableName: 'PAYMENT_PUBLIC_KEY',
+      });
+    },
+  );
+  it.each(PARAM_VARIABLES)('accepts a valid SSM parameter path for %s', (variableName) => {
+    const result = loadConfig({ ...validEnv(), [variableName]: '/App_1/prod.env/some-key' });
+    expect(result.isOk()).toBe(true);
+  });
+  it.each(PARAM_VARIABLES)('rejects malformed SSM parameter names for %s', (variableName) => {
+    for (const value of [
+      'no-leading-slash',
+      '/',
+      '/with space',
+      '/with\nnewline',
+      '/semi;colon',
+      '/emoji-\u{1F600}',
+      '/trailing$',
+      'prv_test_fake_value',
+    ]) {
+      const result = loadConfig({ ...validEnv(), [variableName]: value });
+      expect(result._unsafeUnwrapErr()).toEqual({ kind: 'INVALID_ENV_VAR', variableName });
+    }
+  });
   it('never includes the offending value in the error', () => {
     const secretLikeValue = 'prv_test_fake_value_do_not_log';
     const result = loadConfig({ ...validEnv(), BASE_FEE_IN_CENTS: secretLikeValue });
