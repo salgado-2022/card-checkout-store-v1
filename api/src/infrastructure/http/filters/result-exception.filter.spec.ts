@@ -285,6 +285,19 @@ describe('ResultExceptionFilter', () => {
     });
   });
 
+  describe('5xx log masking', () => {
+    it('masks emails and long digit runs in the logged message of an unexpected error', () => {
+      const { logger } = catchAndRespond(
+        new Error('conflict for ana.perez@example.com with document 1234567890'),
+      );
+      const logged = JSON.stringify(logger.error.mock.calls);
+      expect(logged).not.toContain('ana.perez@example.com');
+      expect(logged).not.toContain('1234567890');
+      expect(logged).toContain('a***@example.com');
+      expect(logged).toContain('*******890');
+    });
+  });
+
   describe('unknown errors', () => {
     it('maps an Error to 500 INTERNAL_ERROR with a generic message and never echoes the original message', () => {
       const { status, body } = catchAndRespond(new Error('password=hunter2 in table X'));

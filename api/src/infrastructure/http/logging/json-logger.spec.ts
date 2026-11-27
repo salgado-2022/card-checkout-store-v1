@@ -113,6 +113,37 @@ describe('JsonLogger', () => {
     expect(parseSingleLine(stdout)).not.toHaveProperty('missing');
   });
 
+  it('masks email and documentNumber fields and never writes the raw values', () => {
+    const { logger, stdout, stderr } = createLogger();
+
+    logger.info('customer upserted', {
+      email: 'john.doe@example.com',
+      customerEmail: 'jane.roe@example.com',
+      documentNumber: '1234567890',
+    });
+    logger.error('customer failed', { documentNumber: '9876543210' });
+
+    expect(parseSingleLine(stdout)).toMatchObject({
+      email: 'j***@example.com',
+      customerEmail: 'j***@example.com',
+      documentNumber: '*******890',
+    });
+    expect(stdout.chunks.join('')).not.toMatch(/john\.doe|jane\.roe|1234567890/);
+    expect(stderr.chunks.join('')).not.toMatch(/9876543210/);
+    expect(parseSingleLine(stderr)).toMatchObject({ documentNumber: '*******210' });
+  });
+
+  it('masks short email and document values without revealing them', () => {
+    const { logger, stdout } = createLogger();
+
+    logger.info('short values', { email: 'a@example.com', documentNumber: '123' });
+
+    expect(parseSingleLine(stdout)).toMatchObject({
+      email: '*@example.com',
+      documentNumber: '***',
+    });
+  });
+
   it('uses process.stdout, process.stderr and the current date when no outputs are given', () => {
     const stdoutWrite = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
     const stderrWrite = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);

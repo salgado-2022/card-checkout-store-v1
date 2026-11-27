@@ -7,6 +7,7 @@ import {
   envelopeFor,
 } from '../error-catalog';
 import { JsonLogger } from '../logging/json-logger';
+import { maskFreeText } from '../logging/mask';
 import type { RequestWithId } from '../middleware/request-id.middleware';
 
 export type { ErrorEnvelope } from '../error-catalog';
@@ -143,6 +144,8 @@ function errorName(exception: unknown): string {
   return exception instanceof Error ? exception.name : 'NonErrorThrown';
 }
 
+// 5xx messages are logged for diagnosis, but masked: an unexpected exception can quote an email,
+// a document or a phone number taken from the request.
 function errorMessage(exception: unknown): string {
-  return exception instanceof Error ? exception.message : 'Non-Error value thrown';
+  return exception instanceof Error ? maskFreeText(exception.message) : 'Non-Error value thrown';
 }

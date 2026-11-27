@@ -134,6 +134,32 @@ describe('ApplicationLoggerAdapter', () => {
     });
   });
 
+  it('masks email and documentNumber fields and never writes the raw values', () => {
+    const { adapter, stdout, stderr } = createAdapter();
+
+    adapter.info('customer upserted', {
+      email: 'john.doe@example.com',
+      customerEmail: 'jane.roe@example.com',
+      documentNumber: '1234567890',
+    });
+    adapter.alert('customer conflict', { documentNumber: '9876543210', customerEmail: 'x@y.com' });
+
+    expect(parseSingleLine(stdout)).toEqual({
+      level: 'info',
+      time: '2026-01-02T03:04:05.000Z',
+      message: 'customer upserted',
+      email: 'j***@example.com',
+      customerEmail: 'j***@example.com',
+      documentNumber: '*******890',
+    });
+    expect(stdoutText(stdout)).not.toMatch(/john\.doe|jane\.roe|1234567890/);
+    expect(parseSingleLine(stderr)).toMatchObject({
+      documentNumber: '*******210',
+      customerEmail: '*@y.com',
+    });
+    expect(stderrText(stderr)).not.toMatch(/9876543210|x@y\.com/);
+  });
+
   it('keeps the message even if a caller passes a message field', () => {
     const { adapter, stdout } = createAdapter();
 
@@ -151,8 +177,18 @@ describe('sanitizeLogFields', () => {
   it('keeps safe primitive fields unchanged', () => {
     expect(sanitizeLogFields({ requestId: 'r', count: 2 })).toEqual({ requestId: 'r', count: 2 });
   });
+
+  it('masks email and documentNumber values', () => {
+    expect(
+      sanitizeLogFields({ email: 'john.doe@example.com', documentNumber: '1234567890' }),
+    ).toEqual({ email: 'j***@example.com', documentNumber: '*******890' });
+  });
 });
 
 function stdoutText(output: MemoryOutput): string {
+  return output.chunks.join('');
+}
+
+function stderrText(output: MemoryOutput): string {
   return output.chunks.join('');
 }

@@ -1,5 +1,6 @@
 import type { ApplicationLogger } from '../../../application/ports/application-logger';
 import { type LogFields, type LogFieldValue, JsonLogger } from './json-logger';
+import { maskSensitiveFields } from './mask';
 
 // Fragments checked against the normalized key (lower case, letters only), so `Card_Number`,
 // `idempotencyKey` and `X-Origin-Verify` are caught the same way.
@@ -29,8 +30,9 @@ const isLogValue = (value: unknown): value is LogFieldValue =>
   typeof value === 'number' ||
   typeof value === 'boolean';
 
-// Keeps primitive fields whose names are not secret-like. Objects, arrays and functions are
-// dropped, so whole request bodies or headers never reach the output by accident.
+// Keeps primitive fields whose names are not secret-like, then masks email and document fields.
+// Objects, arrays and functions are dropped, so whole request bodies or headers never reach the
+// output by accident.
 export function sanitizeLogFields(fields: Readonly<Record<string, unknown>> = {}): LogFields {
   const safe: Record<string, LogFieldValue> = {};
   for (const [name, value] of Object.entries(fields)) {
@@ -38,7 +40,7 @@ export function sanitizeLogFields(fields: Readonly<Record<string, unknown>> = {}
       safe[name] = value;
     }
   }
-  return safe;
+  return maskSensitiveFields(safe);
 }
 
 // Implements the logging port on top of the JSON logger. Each call writes one JSON line.

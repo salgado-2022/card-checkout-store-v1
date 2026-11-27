@@ -1,3 +1,5 @@
+import { maskSensitiveFields } from './mask';
+
 export type LogLevel = 'info' | 'warn' | 'error';
 
 export type LogFieldValue = string | number | boolean | null;
@@ -37,8 +39,14 @@ export class JsonLogger {
   }
 
   private write(level: LogLevel, message: string, fields: LogFields): void {
+    // Masking runs first so email and document fields never reach the output raw.
     // Base keys are spread last so a caller cannot override level, time or message.
-    const line = JSON.stringify({ ...fields, level, time: this.now().toISOString(), message });
+    const line = JSON.stringify({
+      ...maskSensitiveFields(fields),
+      level,
+      time: this.now().toISOString(),
+      message,
+    });
     const target = level === 'error' ? this.outputs.stderr : this.outputs.stdout;
     target.write(`${line}\n`);
   }
