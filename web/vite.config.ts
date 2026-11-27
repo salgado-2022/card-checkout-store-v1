@@ -7,4 +7,8 @@ import react from '@vitejs/plugin-react';
 // bundle through `import.meta.env`; no custom `define` is set here.
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // Never inline assets as data: URIs, so the CSP img-src 'self' stays valid.
+    assetsInlineLimit: 0,
+  },
 });
