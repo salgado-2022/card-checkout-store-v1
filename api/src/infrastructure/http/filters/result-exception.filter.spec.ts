@@ -172,6 +172,63 @@ describe('ResultExceptionFilter', () => {
     });
   });
 
+  describe('body-parser errors', () => {
+    const bodyParserError = (type: string, message: string, status: number): Error =>
+      Object.assign(new SyntaxError(message), { type, status, statusCode: status });
+    it('maps entity.parse.failed to 400 VALIDATION_ERROR with a fixed message', () => {
+      const original = 'Unexpected token h in JSON at position 7: {"card":"hunter2"';
+      const { status, body, logger } = catchAndRespond(
+        bodyParserError('entity.parse.failed', original, 400),
+      );
+      expect(status).toHaveBeenCalledWith(400);
+      expect(body).toEqual({
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+        message: 'Malformed JSON body.',
+        details: [],
+      });
+      expect(JSON.stringify(body)).not.toContain('hunter2');
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('hunter2');
+      expect(logger.warn).toHaveBeenCalledWith('Request rejected', {
+        requestId: 'req-1',
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+        errorName: 'SyntaxError',
+      });
+    });
+    it('maps entity.too.large to 413 PAYLOAD_TOO_LARGE with a fixed message', () => {
+      const original = 'request entity too large: 204800 > 102400 secret-detail';
+      const { status, body, logger } = catchAndRespond(
+        bodyParserError('entity.too.large', original, 413),
+      );
+      expect(status).toHaveBeenCalledWith(413);
+      expect(body).toEqual({
+        statusCode: 413,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Request body too large.',
+        details: [],
+      });
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('secret-detail');
+    });
+    it('ignores other `type` values and treats the error as unknown', () => {
+      const { status, body } = catchAndRespond(bodyParserError('something.else', 'boom', 400));
+      expect(status).toHaveBeenCalledWith(500);
+      expect(body).toMatchObject({ code: 'INTERNAL_ERROR' });
+    });
+    it('does not fail on null or primitive exceptions', () => {
+      expect(catchAndRespond(null).body).toMatchObject({ code: 'INTERNAL_ERROR' });
+      expect(catchAndRespond(undefined).body).toMatchObject({ code: 'INTERNAL_ERROR' });
+    });
+    it('maps an HttpException with status 413 to PAYLOAD_TOO_LARGE', () => {
+      const { body } = catchAndRespond(new HttpException('Too big', 413));
+      expect(body).toMatchObject({
+        statusCode: 413,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Too big',
+      });
+    });
+  });
   describe('unknown errors', () => {
     it('maps an Error to 500 INTERNAL_ERROR with a generic message and never echoes the original message', () => {
       const { status, body } = catchAndRespond(new Error('password=hunter2 in table X'));
@@ -235,8 +292,15 @@ describe('ResultExceptionFilter', () => {
         statusCode: 404,
         code: 'NOT_FOUND',
         errorName: 'NotFoundException',
-        errorMessage: 'missing',
       });
+    });
+    it('never logs the message of a 4xx error, which may echo client input', () => {
+      const { logger } = catchAndRespond(new BadRequestException('field "password" was hunter2'), {
+        requestId: 'r',
+      });
+      const [, fields] = logger.warn.mock.calls[0] as [string, Record<string, unknown>];
+      expect(Object.keys(fields).sort()).toEqual(['code', 'errorName', 'requestId', 'statusCode']);
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('hunter2');
     });
 
     it('logs a non-Error value with placeholder name and message', () => {

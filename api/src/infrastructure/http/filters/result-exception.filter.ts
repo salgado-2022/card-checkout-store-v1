@@ -17,6 +17,8 @@ interface LoggerPort {
 
 const INTERNAL_ERROR_STATUS = 500;
 const INTERNAL_ERROR_MESSAGE = 'Internal server error.';
+const MALFORMED_JSON_MESSAGE = 'Malformed JSON body.';
+const PAYLOAD_TOO_LARGE_MESSAGE = 'Request body too large.';
 
 // Codes follow the API error table in the design. Statuses outside this table fall back to HTTP_ERROR.
 const CODE_BY_STATUS: Readonly<Record<number, string>> = {
@@ -25,6 +27,7 @@ const CODE_BY_STATUS: Readonly<Record<number, string>> = {
   403: 'FORBIDDEN',
   404: 'NOT_FOUND',
   409: 'CONFLICT',
+  413: 'PAYLOAD_TOO_LARGE',
   422: 'UNPROCESSABLE_ENTITY',
   429: 'TOO_MANY_REQUESTS',
   500: 'INTERNAL_ERROR',
@@ -54,17 +57,43 @@ export class ResultExceptionFilter implements ExceptionFilter {
       statusCode: envelope.statusCode,
       code: envelope.code,
       errorName: errorName(exception),
-      errorMessage: errorMessage(exception),
     };
     if (envelope.statusCode >= INTERNAL_ERROR_STATUS) {
-      this.logger.error('Request failed', fields);
+      this.logger.error('Request failed', { ...fields, errorMessage: errorMessage(exception) });
     } else {
+      // 4xx messages can echo client input (for example a body-parser excerpt), so they are not logged.
       this.logger.warn('Request rejected', fields);
     }
   }
 }
 
+// body-parser errors are not HttpExceptions; they carry a `type`. The original message can quote
+// the request body, so these envelopes use fixed messages.
+function bodyParserEnvelope(exception: unknown): ErrorEnvelope | undefined {
+  const type = (exception as { type?: unknown } | null)?.type;
+  if (type === 'entity.parse.failed') {
+    return {
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+      message: MALFORMED_JSON_MESSAGE,
+      details: [],
+    };
+  }
+  if (type === 'entity.too.large') {
+    return {
+      statusCode: 413,
+      code: 'PAYLOAD_TOO_LARGE',
+      message: PAYLOAD_TOO_LARGE_MESSAGE,
+      details: [],
+    };
+  }
+  return undefined;
+}
 function toEnvelope(exception: unknown): ErrorEnvelope {
+  const bodyParser = bodyParserEnvelope(exception);
+  if (bodyParser !== undefined) {
+    return bodyParser;
+  }
   if (exception instanceof HttpException) {
     const { message, details } = describeHttpException(exception);
     const statusCode = exception.getStatus();
