@@ -22,6 +22,17 @@ module.exports = {
       from: { path: '^src/domain' },
       to: { path: '^src/(application|infrastructure)' },
     },
+    {
+      name: 'application-layer-allowed-imports',
+      severity: 'error',
+      comment:
+        'Application code may import only src/domain, src/application, neverthrow and Node.js built-ins. Infrastructure, NestJS, AWS SDK and HTTP libraries are forbidden.',
+      from: { path: '^src/application', pathNot: '\\.spec\\.ts$' },
+      to: {
+        pathNot: ['^src/(domain|application)/', '(^|node_modules/)neverthrow(/|$)', '^node:'],
+        dependencyTypesNot: ['core'],
+      },
+    },
   ],
   options: {
     tsPreCompilationDeps: true,

@@ -140,6 +140,63 @@ describe('dependency-cruiser domain rule (Property 8)', () => {
     );
   });
 
+  describe('application layer allowed imports (Requirement 17.5)', () => {
+    // The probe sits at src/application/probe.ts so the relative paths match the spec literally.
+    const APPLICATION_TARGETS: Readonly<Record<string, string>> = {
+      'src/domain/money.ts': 'export const ZERO_COP = 0;\n',
+      'src/infrastructure/x.ts': 'export const x = 1;\n',
+      'src/application/ports/clock.ts': 'export interface Clock {\n  now(): Date;\n}\n',
+    };
+    it.each([
+      [
+        '@nestjs/common',
+        "import { Injectable } from '@nestjs/common';\nexport const value = Injectable;\n",
+      ],
+      [
+        '@aws-sdk/client-dynamodb',
+        "import { DynamoDBClient } from '@aws-sdk/client-dynamodb';\nexport const client = DynamoDBClient;\n",
+      ],
+      ['express', "import express from 'express';\nexport const app = express;\n"],
+      ['axios', "import axios from 'axios';\nexport const http = axios;\n"],
+      [
+        'an infrastructure file',
+        "import { x } from '../infrastructure/x';\nexport const value = x;\n",
+      ],
+    ])(
+      'reports a violation for an import of %s',
+      (_label, statement) => {
+        const root = createFixture({
+          'src/application/probe.ts': statement,
+          ...APPLICATION_TARGETS,
+        });
+        expect(runDepcruise(root)).not.toBe(0);
+      },
+      TEST_TIMEOUT_MS,
+    );
+    it.each([
+      ['neverthrow', "import { ok } from 'neverthrow';\nexport const result = ok(1);\n"],
+      ['node:crypto', "import { randomUUID } from 'node:crypto';\nexport const id = randomUUID;\n"],
+      ['crypto', "import { randomUUID } from 'crypto';\nexport const id = randomUUID;\n"],
+      [
+        'a relative domain import',
+        "import { ZERO_COP } from '../domain/money';\nexport const start = ZERO_COP;\n",
+      ],
+      [
+        'a sibling application import',
+        "import type { Clock } from './ports/clock';\nexport type Ticker = Clock;\n",
+      ],
+    ])(
+      'accepts an import of %s',
+      (_label, statement) => {
+        const root = createFixture({
+          'src/application/probe.ts': statement,
+          ...APPLICATION_TARGETS,
+        });
+        expect(runDepcruise(root)).toBe(0);
+      },
+      TEST_TIMEOUT_MS,
+    );
+  });
   it(
     'passes on the committed src/ tree through npm run depcruise',
     () => {
