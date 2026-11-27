@@ -13,6 +13,7 @@ export const EXTERNAL_PACKAGES: readonly string[] = [
   '@nestjs/microservices/microservices-module',
   '@nestjs/websockets',
   '@nestjs/websockets/socket-module',
+  // @nestjs/mapped-types first requires class-transformer/cjs/storage (bundled); class-transformer/storage is only its legacy fallback in the catch branch and never runs with class-transformer 0.5.
   'class-transformer/storage',
 ];
 

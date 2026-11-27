@@ -82,6 +82,12 @@ describe('Lambda bundle output (task 7.16)', () => {
     expect(leakedKeys).toEqual([]);
   });
 
+  it('inlines class-transformer/cjs/storage and leaves only the legacy fallback require external', () => {
+    const bundle = readFileSync(bundlePath, 'utf8');
+    expect(bundle).toContain('defaultMetadataStorage');
+    expect(bundle).not.toContain('class-transformer/cjs/storage');
+    expect(bundle.match(/require\("class-transformer\/storage"\)/g)).toHaveLength(1);
+  });
   it('contains no payment private key prefix', () => {
     expect(readFileSync(bundlePath, 'utf8')).not.toMatch(/prv_[A-Za-z0-9_]{8,}/);
   });
