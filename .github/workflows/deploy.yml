@@ -25,9 +25,9 @@ env:
   TF_VAR_payment_public_key: ${{ vars.PAYMENT_PUBLIC_KEY }}
 jobs:
   plan:
-    # Only after a green CI run of a push to master in this repository, or a manual dispatch.
+    # Only after a green CI run of a push to master in this repository, or a manual dispatch from master.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
@@ -52,6 +52,7 @@ jobs:
           role-duration-seconds: 3600
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
+          terraform_version: 1.15.6
           terraform_wrapper: false
       - name: Terraform fmt
         run: terraform fmt -check -recursive
@@ -103,6 +104,7 @@ jobs:
       # The wrapper is disabled so `terraform output -raw` returns clean values.
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
+          terraform_version: 1.15.6
           terraform_wrapper: false
       - name: Terraform init
         run: >
@@ -141,14 +143,15 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: api/package-lock.json
+      - name: Build Lambda bundle
+        run: npm ci && npm run build && (cd dist && zip -qr ../lambda.zip .)
+        working-directory: api
+      # Credentials are loaded after the build, so npm scripts never see AWS credentials.
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 3600
-      - name: Build Lambda bundle
-        run: npm ci && npm run build && (cd dist && zip -qr ../lambda.zip .)
-        working-directory: api
       - name: Update Lambda code
         env:
           LAMBDA_FUNCTION_NAME: ${{ needs.apply.outputs.lambda_function_name }}
@@ -173,11 +176,6 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
-        with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-          role-duration-seconds: 3600
       # Only public values reach the web bundle.
       - name: Build web
         run: npm ci && npm run build
@@ -186,6 +184,12 @@ jobs:
           VITE_API_BASE: /api/v1
           VITE_PAYMENT_API_URL: ${{ vars.PAYMENT_API_URL }}
           VITE_PAYMENT_PUBLIC_KEY: ${{ vars.PAYMENT_PUBLIC_KEY }}
+      # Credentials are loaded after the build, so npm scripts never see AWS credentials.
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 3600
       # Hashed assets are immutable; index.html is revalidated on every request.
       - name: Upload web build and invalidate CloudFront
         env:

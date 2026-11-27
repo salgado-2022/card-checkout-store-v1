@@ -16,8 +16,19 @@ const ALLOWED_PERMISSIONS: Readonly<Record<string, string>> = {
   'id-token': 'write',
   contents: 'read',
 };
+const PROVIDERS_PATH = path.resolve(__dirname, '../../../infra/providers.tf');
+const SETUP_TERRAFORM_PREFIX = 'hashicorp/setup-terraform@';
+const TERRAFORM_JOBS = ['plan', 'apply'];
+const BUILD_THEN_DEPLOY_JOBS = ['deploy-api', 'deploy-web'];
+const EXACT_SEMVER = /^\d+\.\d+\.\d+$/;
+const AWS_CLI_COMMAND = /(^|[\s;&|(])aws\s/;
+const PLAN_GATE =
+  "(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') || " +
+  "(github.event.workflow_run.conclusion == 'success' && " +
+  "github.event.workflow_run.event == 'push' && " +
+  'github.event.workflow_run.head_repository.full_name == github.repository)';
 const PLAN_GATE_FRAGMENTS = [
-  "github.event_name == 'workflow_dispatch'",
+  "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'",
   "github.event.workflow_run.conclusion == 'success'",
   "github.event.workflow_run.event == 'push'",
   'github.event.workflow_run.head_repository.full_name == github.repository',
@@ -145,7 +156,7 @@ function assertPlanGate(workflow: Mapping): void {
   for (const fragment of PLAN_GATE_FRAGMENTS) {
     expect(condition).toContain(fragment);
   }
-  expect(condition).toContain("github.event_name == 'workflow_dispatch'");
+  expect(condition).toBe(PLAN_GATE);
 }
 
 function assertCheckoutsUseDeploySha(workflow: Mapping): void {
@@ -278,6 +289,100 @@ function assertLambdaCodeUpdate(workflow: Mapping): void {
   expect(runsOf(workflow, 'deploy-api')).toMatch(LAMBDA_CODE_UPDATE);
 }
 
+function parseVersion(text: string): number[] {
+  const parts = text.split('.').map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
+    throw new Error(`not a version: ${text}`);
+  }
+  return parts;
+}
+function compareVersions(left: string, right: string): number {
+  const a = parseVersion(left);
+  const b = parseVersion(right);
+  const index = a.findIndex((part, position) => part !== b[position]);
+  return index === -1 ? 0 : a[index] - b[index];
+}
+// Supports the operators used in infra/providers.tf: >=, >, <=, <, = (comma separated).
+function satisfies(version: string, constraints: string): boolean {
+  return constraints.split(',').every((raw) => {
+    const match = /^\s*(>=|<=|>|<|=)?\s*(\d+\.\d+\.\d+)\s*$/.exec(raw);
+    if (match === null) {
+      throw new Error(`unsupported constraint: ${raw}`);
+    }
+    const order = compareVersions(version, match[2]);
+    switch (match[1] ?? '=') {
+      case '>=':
+        return order >= 0;
+      case '>':
+        return order > 0;
+      case '<=':
+        return order <= 0;
+      case '<':
+        return order < 0;
+      default:
+        return order === 0;
+    }
+  });
+}
+function requiredTerraformVersion(): string {
+  const match = /required_version\s*=\s*"([^"]+)"/.exec(fs.readFileSync(PROVIDERS_PATH, 'utf8'));
+  if (match === null) {
+    throw new Error('required_version not found in infra/providers.tf');
+  }
+  return match[1];
+}
+function assertTerraformVersionPinned(workflow: Mapping): void {
+  const required = requiredTerraformVersion();
+  for (const jobName of TERRAFORM_JOBS) {
+    const setups = stepsOf(getJob(workflow, jobName)).filter((step) =>
+      usesAction(step, SETUP_TERRAFORM_PREFIX),
+    );
+    expect({ job: jobName, setups: setups.length }).toEqual({ job: jobName, setups: 1 });
+    const version = withOf(setups[0]).terraform_version;
+    expect({ job: jobName, exact: EXACT_SEMVER.test(String(version)) }).toEqual({
+      job: jobName,
+      exact: true,
+    });
+    expect({ job: jobName, allowed: satisfies(String(version), required) }).toEqual({
+      job: jobName,
+      allowed: true,
+    });
+  }
+  // Every setup-terraform step in the workflow is covered by the check above.
+  const allSetups = Object.values(jobsOf(workflow)).flatMap((job) =>
+    stepsOf(job).filter((step) => usesAction(step, SETUP_TERRAFORM_PREFIX)),
+  );
+  expect(allSetups).toHaveLength(TERRAFORM_JOBS.length);
+}
+function assertCredentialsLoadedAfterBuild(workflow: Mapping): void {
+  for (const jobName of BUILD_THEN_DEPLOY_JOBS) {
+    const steps = stepsOf(getJob(workflow, jobName));
+    const credentialSteps = steps.filter((step) => usesAction(step, AWS_CREDENTIALS_PREFIX));
+    expect({ job: jobName, credentials: credentialSteps.length }).toEqual({
+      job: jobName,
+      credentials: 1,
+    });
+    const credentialsIndex = steps.indexOf(credentialSteps[0]);
+    const buildIndex = steps.findIndex((step) => /\bnpm run build\b/.test(runOf(step)));
+    const installIndex = steps.findIndex((step) => /\bnpm ci\b/.test(runOf(step)));
+    expect(buildIndex).toBeGreaterThanOrEqual(0);
+    expect(installIndex).toBeGreaterThanOrEqual(0);
+    expect({ job: jobName, afterInstall: credentialsIndex > installIndex }).toEqual({
+      job: jobName,
+      afterInstall: true,
+    });
+    expect({ job: jobName, afterBuild: credentialsIndex > buildIndex }).toEqual({
+      job: jobName,
+      afterBuild: true,
+    });
+    // Nothing that runs before the credentials step may call the AWS CLI.
+    const earlyAwsCalls = steps
+      .slice(0, credentialsIndex)
+      .filter((step) => AWS_CLI_COMMAND.test(runOf(step)))
+      .map(runOf);
+    expect({ job: jobName, earlyAwsCalls }).toEqual({ job: jobName, earlyAwsCalls: [] });
+  }
+}
 interface Assertion {
   readonly name: string;
   readonly check: (workflow: Mapping) => void;
@@ -289,7 +394,7 @@ const ASSERTIONS: readonly Assertion[] = [
     check: assertTriggers,
   },
   {
-    name: 'plan runs only after a successful push CI run in this repository or on dispatch',
+    name: 'plan runs only after a successful push CI run in this repository or on dispatch from master',
     check: assertPlanGate,
   },
   {
@@ -344,6 +449,14 @@ const ASSERTIONS: readonly Assertion[] = [
     name: 'deploy-api runs update-function-code',
     check: assertLambdaCodeUpdate,
   },
+  {
+    name: 'setup-terraform pins an exact version allowed by required_version',
+    check: assertTerraformVersionPinned,
+  },
+  {
+    name: 'deploy-api and deploy-web load AWS credentials after npm ci and the build',
+    check: assertCredentialsLoadedAfterBuild,
+  },
 ];
 
 function failingAssertions(workflow: Mapping): string[] {
@@ -381,6 +494,11 @@ interface Mutation {
   readonly mutate: (workflow: Mapping) => void;
 }
 
+function moveStepBefore(workflow: Mapping, jobName: string, step: Mapping, marker: string): void {
+  const steps = rawSteps(getJob(workflow, jobName));
+  steps.splice(steps.indexOf(step), 1);
+  steps.splice(steps.indexOf(findRawStep(workflow, jobName, marker)), 0, step);
+}
 const MUTATIONS: readonly Mutation[] = [
   {
     name: 'extra permission on plan',
@@ -430,6 +548,86 @@ const MUTATIONS: readonly Mutation[] = [
     mutate: (workflow) => {
       getJob(workflow, 'plan').if =
         "github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'push'";
+    },
+  },
+  {
+    name: 'dispatch allowed from any branch',
+    mutate: (workflow) => {
+      getJob(workflow, 'plan').if =
+        "github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && " +
+        "github.event.workflow_run.event == 'push' && " +
+        'github.event.workflow_run.head_repository.full_name == github.repository)';
+    },
+  },
+  {
+    name: 'dispatch ref check dropped from the dispatch branch only',
+    mutate: (workflow) => {
+      getJob(workflow, 'plan').if = String(getJob(workflow, 'plan').if).replace(
+        " && github.ref == 'refs/heads/master'",
+        '',
+      );
+    },
+  },
+  {
+    name: 'plan gate widened with an always-true clause',
+    mutate: (workflow) => {
+      getJob(workflow, 'plan').if = `${String(getJob(workflow, 'plan').if)} || true`;
+    },
+  },
+  {
+    name: 'AWS credentials before npm ci in deploy-api',
+    mutate: (workflow) => {
+      const credentials = findRawStep(workflow, 'deploy-api', AWS_CREDENTIALS_PREFIX);
+      moveStepBefore(workflow, 'deploy-api', credentials, 'npm ci');
+    },
+  },
+  {
+    name: 'AWS credentials before the build in deploy-web',
+    mutate: (workflow) => {
+      const credentials = findRawStep(workflow, 'deploy-web', AWS_CREDENTIALS_PREFIX);
+      moveStepBefore(workflow, 'deploy-web', credentials, 'npm ci');
+    },
+  },
+  {
+    name: 'AWS CLI call before the credentials step',
+    mutate: (workflow) => {
+      const credentials = findRawStep(workflow, 'deploy-web', AWS_CREDENTIALS_PREFIX);
+      const steps = rawSteps(getJob(workflow, 'deploy-web'));
+      steps.splice(steps.indexOf(credentials), 0, { run: 'aws sts get-caller-identity' });
+    },
+  },
+  {
+    name: 'setup-terraform without terraform_version in plan',
+    mutate: (workflow) => {
+      delete asMapping(findRawStep(workflow, 'plan', SETUP_TERRAFORM_PREFIX).with, 'with')
+        .terraform_version;
+    },
+  },
+  {
+    name: 'setup-terraform with a floating version in apply',
+    mutate: (workflow) => {
+      asMapping(
+        findRawStep(workflow, 'apply', SETUP_TERRAFORM_PREFIX).with,
+        'with',
+      ).terraform_version = 'latest';
+    },
+  },
+  {
+    name: 'setup-terraform version below required_version',
+    mutate: (workflow) => {
+      asMapping(
+        findRawStep(workflow, 'plan', SETUP_TERRAFORM_PREFIX).with,
+        'with',
+      ).terraform_version = '1.9.0';
+    },
+  },
+  {
+    name: 'setup-terraform version at the excluded upper bound',
+    mutate: (workflow) => {
+      asMapping(
+        findRawStep(workflow, 'apply', SETUP_TERRAFORM_PREFIX).with,
+        'with',
+      ).terraform_version = '2.0.0';
     },
   },
   {
