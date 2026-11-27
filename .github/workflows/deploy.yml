@@ -1,0 +1,213 @@
+name: deploy
+# Runs only after the `ci` workflow finishes on master, or on manual dispatch.
+# There is no push or pull-request trigger: a pull request can never deploy.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+# Read-only token by default. Jobs that call AWS add `id-token: write` for OIDC.
+permissions:
+  contents: read
+# One deployment at a time. A running apply is never cancelled.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+env:
+  # Deploy exactly the commit that CI validated.
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+  TF_VAR_budget_notification_email: ${{ vars.BUDGET_NOTIFICATION_EMAIL }}
+  TF_VAR_payment_api_url: ${{ vars.PAYMENT_API_URL }}
+  # Public value; feeds the Lambda PAYMENT_PUBLIC_KEY variable.
+  TF_VAR_payment_public_key: ${{ vars.PAYMENT_PUBLIC_KEY }}
+jobs:
+  plan:
+    # Only after a green CI run of a push to master in this repository, or a manual dispatch.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      # Actions are pinned to the commit SHA of their release tag.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 3600
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_wrapper: false
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+      - name: Terraform init
+        run: >
+          terraform init -input=false
+          -backend-config="bucket=$TF_STATE_BUCKET"
+          -backend-config="key=card-checkout-store/infra.tfstate"
+          -backend-config="region=$AWS_REGION"
+      - name: Terraform validate
+        run: terraform validate
+      # The plan file never leaves the runner: it can hold sensitive values in plain text.
+      - name: Terraform plan
+        run: terraform plan -input=false -out=tfplan
+      - name: Plan summary
+        run: |
+          {
+            echo '```'
+            terraform show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A required reviewer approves here, before any change reaches AWS.
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: infra
+    outputs:
+      lambda_function_name: ${{ steps.out.outputs.lambda_function_name }}
+      web_bucket_name: ${{ steps.out.outputs.web_bucket_name }}
+      distribution_id: ${{ steps.out.outputs.distribution_id }}
+      distribution_domain: ${{ steps.out.outputs.distribution_domain }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 3600
+      # The wrapper is disabled so `terraform output -raw` returns clean values.
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_wrapper: false
+      - name: Terraform init
+        run: >
+          terraform init -input=false
+          -backend-config="bucket=$TF_STATE_BUCKET"
+          -backend-config="key=card-checkout-store/infra.tfstate"
+          -backend-config="region=$AWS_REGION"
+      # Re-plan inside the approved job; the plan file never leaves the runner.
+      - name: Terraform plan
+        run: terraform plan -input=false -out=tfplan
+      - name: Terraform apply
+        run: terraform apply -input=false tfplan
+      # Only non-sensitive outputs are read. The origin secret output is never read or printed.
+      - name: Read outputs
+        id: out
+        run: |
+          echo "lambda_function_name=$(terraform output -raw lambda_function_name)" >> "$GITHUB_OUTPUT"
+          echo "web_bucket_name=$(terraform output -raw web_bucket_name)" >> "$GITHUB_OUTPUT"
+          echo "distribution_id=$(terraform output -raw distribution_id)" >> "$GITHUB_OUTPUT"
+          echo "distribution_domain=$(terraform output -raw distribution_domain_name)" >> "$GITHUB_OUTPUT"
+  deploy-api:
+    needs: apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 3600
+      - name: Build Lambda bundle
+        run: npm ci && npm run build && (cd dist && zip -qr ../lambda.zip .)
+        working-directory: api
+      - name: Update Lambda code
+        env:
+          LAMBDA_FUNCTION_NAME: ${{ needs.apply.outputs.lambda_function_name }}
+        run: |
+          aws lambda update-function-code --function-name "$LAMBDA_FUNCTION_NAME" --zip-file fileb://api/lambda.zip
+          aws lambda wait function-updated --function-name "$LAMBDA_FUNCTION_NAME"
+  deploy-web:
+    needs: [apply, deploy-api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 3600
+      # Only public values reach the web bundle.
+      - name: Build web
+        run: npm ci && npm run build
+        working-directory: web
+        env:
+          VITE_API_BASE: /api/v1
+          VITE_PAYMENT_API_URL: ${{ vars.PAYMENT_API_URL }}
+          VITE_PAYMENT_PUBLIC_KEY: ${{ vars.PAYMENT_PUBLIC_KEY }}
+      # Hashed assets are immutable; index.html is revalidated on every request.
+      - name: Upload web build and invalidate CloudFront
+        env:
+          WEB_BUCKET_NAME: ${{ needs.apply.outputs.web_bucket_name }}
+          DISTRIBUTION_ID: ${{ needs.apply.outputs.distribution_id }}
+        run: |
+          aws s3 sync web/dist "s3://$WEB_BUCKET_NAME" --delete --exclude index.html \
+            --cache-control "public, max-age=31536000, immutable"
+          aws s3 cp web/dist/index.html "s3://$WEB_BUCKET_NAME/index.html" --cache-control "no-cache"
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"
+  smoke-test:
+    needs: [apply, deploy-web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
+      - name: Smoke test
+        env:
+          DISTRIBUTION_DOMAIN: ${{ needs.apply.outputs.distribution_domain }}
+        run: bash scripts/smoke-test.sh "https://$DISTRIBUTION_DOMAIN"
