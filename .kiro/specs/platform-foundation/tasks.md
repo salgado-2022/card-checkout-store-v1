@@ -316,7 +316,7 @@ Conventions for every task:
     - Link to `docs/deployment.md`, add the public environment placeholder, the automatic deployment note (GitHub Actions with approval) and the cost note (always-free tier, 1 USD budget alarm). English only. Extend the test of task 1.3 to assert the link to `docs/deployment.md`.
     - _Requirements: 18.1, 16.1, 24.1_
 
-- [ ] 13. Checkpoint, `feat/infra-base`
+- [x] 13. Checkpoint, `feat/infra-base`
   - Run in `api/` and `web/`: `npm run lint`, `npx tsc --noEmit`, `npm test -- --coverage` (confirm all four metrics are at least 80 in each project), `npm run build`; run `npm run depcruise` in `api/`; run `terraform fmt -check -recursive`, `terraform init -backend=false` and `terraform validate` in `infra/` and in `infra/bootstrap/`; run `bash scripts/check-forbidden-words.sh` and confirm it reports no findings.
   - Do not run `terraform plan` or `terraform apply`.
   - Ensure all tests pass, ask the user if questions arise.
