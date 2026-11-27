@@ -135,6 +135,28 @@ describe('ci.yml workflow structure', () => {
       const step = findRunStep(steps(), 'npm run depcruise');
       expect(step?.['working-directory']).toBe('api');
     });
+    describe('docs/openapi.json currency check (Requirement 18.6)', () => {
+      const REGENERATE = 'npm run openapi';
+      const DIFF_CHECK = 'git diff --exit-code -- ../docs/openapi.json';
+
+      it('regenerates the OpenAPI document in api/', () => {
+        const step = findRunStep(steps(), REGENERATE);
+        expect(step?.['working-directory']).toBe('api');
+      });
+      it('fails when the regenerated document differs from the committed file', () => {
+        const step = findRunStep(steps(), DIFF_CHECK);
+        expect(step?.['working-directory']).toBe('api');
+      });
+      it('runs regeneration and the diff check after the tests with coverage', () => {
+        const all = steps();
+        const testIndex = all.indexOf(findRunStep(all, 'npm test -- --coverage') ?? {});
+        const regenerateIndex = all.indexOf(findRunStep(all, REGENERATE) ?? {});
+        const diffIndex = all.indexOf(findRunStep(all, DIFF_CHECK) ?? {});
+        expect(testIndex).toBeGreaterThanOrEqual(0);
+        expect(regenerateIndex).toBeGreaterThan(testIndex);
+        expect(diffIndex).toBeGreaterThan(regenerateIndex);
+      });
+    });
   });
 
   describe('web job (Requirement 5.2)', () => {
@@ -190,6 +212,19 @@ describe('ci.yml workflow structure', () => {
     it('grants no id-token permission at any level', () => {
       const permissions: unknown = workflow.permissions;
       expect(isMapping(permissions) && 'id-token' in permissions).toBe(false);
+    });
+    it('grants no id-token permission at job level', () => {
+      const jobs = Object.values(workflow.jobs as Mapping).filter(isMapping);
+      for (const job of jobs) {
+        const permissions: unknown = job.permissions;
+        expect(isMapping(permissions) && 'id-token' in permissions).toBe(false);
+      }
+    });
+    it('uses no AWS credentials action or key variables in any step', () => {
+      const text = fs.readFileSync(CI_WORKFLOW_PATH, 'utf8');
+      expect(text).not.toMatch(/aws-actions\/configure-aws-credentials/);
+      expect(text).not.toMatch(/AWS_ACCESS_KEY_ID/);
+      expect(text).not.toMatch(/AWS_SECRET_ACCESS_KEY/);
     });
   });
 });
