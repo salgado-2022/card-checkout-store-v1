@@ -1,6 +1,6 @@
 ---
 inclusion: fileMatch
-fileMatchPattern: ["web/src/**"]
+fileMatchPattern: ["web/src/**", "web/index.html", "web/vite.config.*", "web/public/**"]
 ---
 # Frontend UI rules
 
@@ -14,3 +14,11 @@ fileMatchPattern: ["web/src/**"]
 - **Status (step 4):** "Procesando tu pago" while PENDING; approved / declined / error variants with reference, total, masked card; after 30 polls show "Tu pago sigue en proceso" + "Consultar de nuevo". Final state: "Volver a la tienda" or 10 s visible countdown.
 - **Persistence:** single localStorage key `checkout:v1`, schema-validated on load, expires in 24 h, whitelist only (never number, CVC or token). Refresh mapping: step 1→1, 2→2 (modal open), 3→2, 4→4 (resume polling, never create a new transaction).
 - Respect `prefers-reduced-motion`.
+
+## Content-Security-Policy compatibility (production header, set by CloudFront)
+Policy: `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' <payment API origin>; font-src` falls back to `'self'`. Anything that works with `vite dev` but breaks under this header is a production bug.
+- **No `data:` images:** set `build.assetsInlineLimit: 0` in `web/vite.config.ts` so Vite never inlines small assets (card brand logos, icons) as base64. Prefer SVG imported as React components or files under `web/public/`.
+- **No inline `<style>` or `<script>`:** use CSS Modules or plain CSS files; no CSS-in-JS libraries that inject `<style>` tags (styled-components, emotion). The React `style` prop is allowed (applied through the CSSOM).
+- **Fonts self-hosted** (bundled `woff2`) or system font stack; no font CDN.
+- `index.html` keeps only external `<script type="module" src>` and `<link rel="stylesheet">`.
+- A build test checks `web/dist` (all `.html`, `.css`, `.js`) contains no `data:image` or inline `<script>`/`<style>` content.

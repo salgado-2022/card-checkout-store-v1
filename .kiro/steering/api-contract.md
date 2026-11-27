@@ -38,4 +38,4 @@ fileMatchPattern: ["api/src/infrastructure/http/**", "web/src/shared/api/**", "d
 - Controllers only validate DTOs (`whitelist` + `forbidNonWhitelisted`) and map `Result` → HTTP. No business logic.
 - Every response has `X-Request-Id`. Never return card tokens. Never expose stack traces.
 - Requests without a valid `X-Origin-Verify` header → 403. Rate limit 60 req/min per IP.
-- Swagger at `/api/v1/docs` via `@nestjs/swagger`.
+- OpenAPI from `@nestjs/swagger` decorators, generated at build time into `docs/openapi.json` (no Swagger UI served by the Lambda, because the esbuild bundle cannot resolve `swagger-ui-dist` assets). Swagger UI is published as static files under `/docs/` from S3, and a Postman collection lives in `docs/postman/`.
