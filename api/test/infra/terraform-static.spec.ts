@@ -305,6 +305,11 @@ describe('infra/*.tf root module (static)', () => {
       expect(csp).toContain(`"img-src 'self'"`);
       expect(csp).not.toMatch(/unsafe-inline|unsafe-eval|data:/);
     });
+    it('limits connect-src to the origin of payment_api_url, not the full path', () => {
+      const csp = headersPolicy.body;
+      expect(csp).toContain(`\${regex("^https://[^/]+", var.payment_api_url)}`);
+      expect(csp).not.toMatch(/connect-src 'self' \$\{var\.payment_api_url\}/);
+    });
 
     it('sends the origin secret as X-Origin-Verify from random_password', () => {
       const origins = nestedBlocksOf(distribution.body, 'origin');

@@ -32,7 +32,7 @@ resource "aws_cloudfront_response_headers_policy" "security" {
         "script-src 'self'",
         "style-src 'self'",
         "img-src 'self'",
-        "connect-src 'self' ${var.payment_api_url}",
+        "connect-src 'self' ${regex("^https://[^/]+", var.payment_api_url)}",
         "base-uri 'self'",
         "object-src 'none'",
         "frame-ancestors 'none'",
