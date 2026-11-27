@@ -92,8 +92,13 @@ describe('createApp', () => {
 
     expect(response.status).toBe(404);
     expect(response.headers['content-type']).toMatch(/application\/json/);
-    expect(response.body).toMatchObject({ statusCode: 404, code: 'NOT_FOUND', details: [] });
-    expect(typeof response.body.message).toBe('string');
+    expect(response.body).toEqual({
+      statusCode: 404,
+      code: 'ROUTE_NOT_FOUND',
+      message: 'Route not found.',
+      details: [],
+    });
+    expect(response.text).not.toContain('unknown');
   });
 
   it('answers 403 on unknown and webhook-like routes under the prefix without the header', async () => {
@@ -122,7 +127,7 @@ describe('createApp', () => {
 
     expect(response.status).toBe(404);
     expect(response.headers['content-type']).toMatch(/application\/json/);
-    expect(response.body).toMatchObject({ statusCode: 404, code: 'NOT_FOUND', details: [] });
+    expect(response.body).toMatchObject({ statusCode: 404, code: 'ROUTE_NOT_FOUND', details: [] });
   });
 
   it('answers 403 on the root path without the header', async () => {
@@ -170,6 +175,20 @@ describe('createApp', () => {
     expect(response.status).toBe(404);
   });
 
+  it.each(['/docs', '/api-docs', '/swagger', '/api/v1/docs'])(
+    'answers 404 ROUTE_NOT_FOUND for the documentation path %s, so no API docs are served',
+    async (path) => {
+      const response = await request(server()).get(path).set('X-Origin-Verify', SECRET);
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({
+        statusCode: 404,
+        code: 'ROUTE_NOT_FOUND',
+        message: 'Route not found.',
+        details: [],
+      });
+    },
+  );
   it('sets X-Request-Id on 200, 403 and 404 responses', async () => {
     const ok200 = await request(server()).get(HEALTH).set('X-Origin-Verify', SECRET);
     const denied = await request(server()).get(HEALTH);
@@ -258,6 +277,34 @@ describe('createApp', () => {
     expect(response.text).not.toContain('hunter2-leak');
     expect(lines.join('')).not.toContain('hunter2-leak');
     expect(response.headers['x-request-id']).toEqual(expect.any(String));
+  });
+  it('answers 400 VALIDATION_ERROR, not 500, for a corrupt gzip body', async () => {
+    lines.length = 0;
+    const response = await request(server())
+      .post('/api/v1/unknown')
+      .set('X-Origin-Verify', SECRET)
+      .set('Content-Type', 'application/json')
+      .set('Content-Encoding', 'gzip')
+      .send('not-gzip-secret-detail');
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+      message: 'Request body could not be read.',
+      details: [],
+    });
+    expect(lines.join('')).not.toContain('secret-detail');
+  });
+  it('answers 415 UNSUPPORTED_MEDIA_TYPE for an unknown content encoding', async () => {
+    const response = await request(server())
+      .post('/api/v1/unknown')
+      .set('X-Origin-Verify', SECRET)
+      .set('Content-Type', 'application/json')
+      .set('Content-Encoding', 'x-secret-detail')
+      .send('{}');
+    expect(response.status).toBe(415);
+    expect(response.body).toMatchObject({ statusCode: 415, code: 'UNSUPPORTED_MEDIA_TYPE' });
+    expect(response.text).not.toContain('secret-detail');
   });
   it('answers 413 PAYLOAD_TOO_LARGE with a fixed message when the body exceeds the limit', async () => {
     lines.length = 0;

@@ -9,10 +9,12 @@ import { AppModule } from './app.module';
 import { ResultExceptionFilter } from './filters/result-exception.filter';
 import { JsonLogger } from './logging/json-logger';
 import { preserveBodyParseFailure } from './middleware/body-parser-error.middleware';
+import { contentTypeGuardMiddleware } from './middleware/content-type-guard.middleware';
 import { noStoreMiddleware } from './middleware/no-store.middleware';
 import { OriginGuardMiddleware } from './middleware/origin-guard.middleware';
 import { RequestIdMiddleware, type RequestWithId } from './middleware/request-id.middleware';
 import { RequestLoggerMiddleware } from './middleware/request-logger.middleware';
+import { createValidationPipe } from './validation-pipe';
 
 export const GLOBAL_PREFIX = 'api/v1';
 
@@ -48,6 +50,9 @@ export async function createApp(deps: CreateAppDeps): Promise<INestApplication> 
     originGuard.use(req, res, next),
   );
 
+  // Before the body parser: a POST with a body of the wrong type is rejected without being parsed.
+  app.use(contentTypeGuardMiddleware);
+
   // Registered here (not left to Nest's default) so the error handler can sit right after it.
   // Its default 100 kb limit is what produces `entity.too.large`.
   app.useBodyParser('json');
@@ -55,6 +60,7 @@ export async function createApp(deps: CreateAppDeps): Promise<INestApplication> 
   app.disable('x-powered-by');
   app.set('etag', false);
   app.setGlobalPrefix(GLOBAL_PREFIX);
+  app.useGlobalPipes(createValidationPipe());
   app.useGlobalFilters(new ResultExceptionFilter(logger));
   await app.init();
   return app;
