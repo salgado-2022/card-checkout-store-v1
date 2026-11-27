@@ -110,6 +110,23 @@ function findBlock(blocks: Block[], label: string): Block {
   return block;
 }
 
+// Checks that take text so a mutated copy can prove the check fails.
+function isSensitiveVariable(variablesText: string, name: string): boolean {
+  const variable = findBlock(parseBlocks(variablesText, 'variable'), name);
+  return /^[ \t]*sensitive[ \t]*=[ \t]*true[ \t]*$/m.test(topLevel(variable.body));
+}
+function hasOriginSecretRotation(variablesText: string, ssmText: string): boolean {
+  const variable = findBlock(parseBlocks(variablesText, 'variable'), 'origin_secret_rotation');
+  const level = topLevel(variable.body);
+  const password = findBlock(resourcesOf('random_password', ssmText), 'origin_verify');
+  const keepersAssignment = /^[ \t]*keepers[ \t]*=[ \t]*\{([^}]*)\}/m.exec(password.body);
+  return (
+    attribute(level, 'type') === 'string' &&
+    attribute(level, 'default') === '"1"' &&
+    keepersAssignment !== null &&
+    /^[ \t]*rotation[ \t]*=[ \t]*var\.origin_secret_rotation[ \t]*$/m.test(keepersAssignment[1])
+  );
+}
 const WORDS_EXIST = fs.existsSync(WORDS_FILE);
 if (!WORDS_EXIST) {
   console.warn(`terraform-static: ${WORDS_FILE} not found, forbidden-word check skipped`);
@@ -363,6 +380,38 @@ describe('infra/*.tf root module (static)', () => {
       expect(topLevel(variable.body)).not.toMatch(/^[ \t]*default[ \t]*=/m);
     });
 
+    it('marks budget_notification_email as sensitive', () => {
+      expect(isSensitiveVariable(codeFiles['variables.tf'], 'budget_notification_email')).toBe(
+        true,
+      );
+    });
+    it('detects budget_notification_email without sensitive = true', () => {
+      const variables = codeFiles['variables.tf'];
+      expect(isSensitiveVariable(variables, 'payment_api_url')).toBe(false);
+      const mutated = variables.replace(/^[ \t]*sensitive[ \t]*=[ \t]*true\n/m, '');
+      expect(mutated).not.toEqual(variables);
+      expect(isSensitiveVariable(mutated, 'budget_notification_email')).toBe(false);
+      const falseValue = variables.replace(/sensitive(\s*)= true/, 'sensitive$1= false');
+      expect(isSensitiveVariable(falseValue, 'budget_notification_email')).toBe(false);
+    });
+    it('rotates the origin secret through origin_secret_rotation keepers', () => {
+      expect(hasOriginSecretRotation(codeFiles['variables.tf'], codeFiles['ssm.tf'])).toBe(true);
+    });
+    it('detects an origin secret without the rotation keepers', () => {
+      const variables = codeFiles['variables.tf'];
+      const ssm = codeFiles['ssm.tf'];
+      const withoutKeepers = ssm.replace(/keepers = \{[^}]*\}/, '');
+      expect(withoutKeepers).not.toEqual(ssm);
+      expect(hasOriginSecretRotation(variables, withoutKeepers)).toBe(false);
+      const literalKeepers = ssm.replace('var.origin_secret_rotation', '"1"');
+      expect(hasOriginSecretRotation(variables, literalKeepers)).toBe(false);
+      const otherDefault = variables.replace(
+        /(variable "origin_secret_rotation"[\s\S]*?default\s*=\s*)"1"/,
+        '$1"2"',
+      );
+      expect(otherDefault).not.toEqual(variables);
+      expect(hasOriginSecretRotation(otherDefault, ssm)).toBe(false);
+    });
     it('generates the origin secret with random_password in ssm.tf and sets no key_id', () => {
       const ssm = codeFiles['ssm.tf'] ?? '';
       expect(findBlock(resourcesOf('random_password', ssm), 'origin_verify')).toBeDefined();

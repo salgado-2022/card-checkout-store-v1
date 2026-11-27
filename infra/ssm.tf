@@ -8,6 +8,11 @@ data "aws_region" "current" {}
 resource "random_password" "origin_verify" {
   length  = 48
   special = false
+
+  # Changing origin_secret_rotation replaces the password (see docs/deployment.md).
+  keepers = {
+    rotation = var.origin_secret_rotation
+  }
 }
 
 resource "aws_ssm_parameter" "origin_verify" {

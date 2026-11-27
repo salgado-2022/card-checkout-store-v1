@@ -12,6 +12,7 @@ variable "project_name" {
 variable "budget_notification_email" {
   description = "Email address that receives AWS Budgets alerts. Required, no default."
   type        = string
+  sensitive   = true
 
   validation {
     condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.budget_notification_email))
@@ -44,4 +45,10 @@ variable "lambda_artifact_path" {
   description = "Optional path to a prebuilt Lambda zip. When null, Terraform uses a placeholder zip."
   type        = string
   default     = null
+}
+
+variable "origin_secret_rotation" {
+  description = "Rotation counter for the origin secret. Change the value in a pull request to generate a new secret."
+  type        = string
+  default     = "1"
 }
