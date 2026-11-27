@@ -32,8 +32,15 @@ const expectedTokens = {
 // Short timings keep the retry tests fast. The profile values are covered in provider-call-policy.spec.ts.
 const FAST_TIMING = { attemptTimeoutMs: 200, backoffMs: 1 };
 
+const SECRET_PARAMS = {
+  paymentPrivateKeyParam: '/test/payment/private-key',
+  paymentIntegritySecretParam: '/test/payment/integrity-secret',
+};
 const adapter = (publicKey = PUBLIC_KEY): PaymentGatewayAdapter =>
-  new PaymentGatewayAdapter({ paymentApiUrl: BASE_URL, paymentPublicKey: publicKey }, FAST_TIMING);
+  new PaymentGatewayAdapter(
+    { paymentApiUrl: BASE_URL, paymentPublicKey: publicKey, ...SECRET_PARAMS },
+    FAST_TIMING,
+  );
 
 describe('PaymentGatewayAdapter.getAcceptanceTokens', () => {
   beforeEach(() => {
@@ -59,6 +66,7 @@ describe('PaymentGatewayAdapter.getAcceptanceTokens', () => {
     const defaultTimingAdapter = new PaymentGatewayAdapter({
       paymentApiUrl: BASE_URL,
       paymentPublicKey: PUBLIC_KEY,
+      ...SECRET_PARAMS,
     });
 
     const result = await defaultTimingAdapter.getAcceptanceTokens();
@@ -90,7 +98,7 @@ describe('PaymentGatewayAdapter.getAcceptanceTokens', () => {
   it('encodes the public key segment and tolerates a trailing slash in the base URL', async () => {
     nock(BASE_URL).get('/merchants/pub_test%2Ffake').reply(200, validBody);
     const encodedAdapter = new PaymentGatewayAdapter(
-      { paymentApiUrl: `${BASE_URL}//`, paymentPublicKey: 'pub_test/fake' },
+      { paymentApiUrl: `${BASE_URL}//`, paymentPublicKey: 'pub_test/fake', ...SECRET_PARAMS },
       FAST_TIMING,
     );
 
