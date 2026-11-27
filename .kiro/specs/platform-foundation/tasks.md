@@ -139,82 +139,82 @@ Conventions for every task:
 
 ### Branch `feat/infra-base`
 
-- [ ] 7. API runtime: configuration, origin guard, health, Lambda bundle
-  - [ ] 7.1 Implement `loadConfig()` returning a `Result`
+- [x] 7. API runtime: configuration, origin guard, health, Lambda bundle
+  - [x] 7.1 Implement `loadConfig()` returning a `Result`
     - Install `neverthrow` and `zod`. Create `api/src/infrastructure/config/env.schema.ts` and `env.config.ts` with `AppConfig`, `ConfigError` (`kind`, `variableName` only, never a value), required variables from Requirement 7.1 plus the five table names (`DYNAMODB_TABLE_PRODUCTS`, `DYNAMODB_TABLE_CUSTOMERS`, `DYNAMODB_TABLE_TRANSACTIONS`, `DYNAMODB_TABLE_DELIVERIES`, `DYNAMODB_TABLE_IDEMPOTENCY_KEYS`), and defaults `BASE_FEE_IN_CENTS=300000`, `DELIVERY_FEE_IN_CENTS=800000`. `loadConfig` never throws.
     - Example tests `env.config.spec.ts`: one missing-variable `Err` per required variable (`it.each`), both fee defaults, an explicit fee overriding the default, a non-numeric fee returning `INVALID_ENV_VAR`.
     - _Requirements: 7.1, 7.2, 7.3, 7.4_
-  - [ ] 7.2 Property test for configuration failure (Property 6)
+  - [x] 7.2 Property test for configuration failure (Property 6)
     - **Property 6: Missing or invalid configuration fails startup without leaking values**
     - **Validates: Requirements 7.2**
     - `fast-check`: generate random subsets of required variables to omit or corrupt with random secret-looking values; assert `loadConfig` returns `Err` naming a variable and that `JSON.stringify(error)` and the error message never contain any generated value.
     - _Requirements: 7.2_
-  - [ ] 7.3 Property test for fee defaults (Property 7)
+  - [x] 7.3 Property test for fee defaults (Property 7)
     - **Property 7: Fee defaults apply only when unset**
     - **Validates: Requirements 7.3**
     - `fast-check`: unset fee variables resolve to 300000 and 800000; any valid integer string resolves to that integer.
     - _Requirements: 7.3_
-  - [ ] 7.4 Implement the constant-time comparison helper
+  - [x] 7.4 Implement the constant-time comparison helper
     - `api/src/infrastructure/http/security/timing-safe-equal.ts`: hash both inputs (SHA-256) then `crypto.timingSafeEqual`, so different lengths do not throw.
     - Unit tests: equal strings, different strings, different lengths, empty strings, unicode.
     - _Requirements: 9.4_
-  - [ ] 7.5 Implement `OriginSecretProvider`
+  - [x] 7.5 Implement `OriginSecretProvider`
     - Install `@aws-sdk/client-ssm` and `aws-sdk-client-mock`. `origin-secret.provider.ts` reads `ORIGIN_VERIFY_SECRET_PARAM` with `WithDecryption: true` once per container, caches the value at module scope, and returns a `ResultAsync` with an error that names the parameter and never the value.
     - Tests with `aws-sdk-client-mock`: first call hits SSM once, later calls reuse the cache (call count stays 1), SSM failure returns `Err` naming the parameter and the logged text contains no value.
     - _Requirements: 7.5, 9.7_
-  - [ ] 7.6 Implement `RequestIdMiddleware`
+  - [x] 7.6 Implement `RequestIdMiddleware`
     - Reuse the incoming `X-Request-Id`, otherwise generate one with `crypto.randomUUID()` (Node built-in, no extra dependency); set it on `req` (for example `req.requestId`) and on the response header for every route. It runs before the logger and the origin guard so both read the same id.
     - Unit tests: header reused, header generated when absent (spy on `crypto.randomUUID` and assert it is called exactly once and its value is returned), non-empty generated value.
     - _Requirements: 8.4_
-  - [ ] 7.7 Property test for request id propagation (Property 4)
+  - [x] 7.7 Property test for request id propagation (Property 4)
     - **Property 4: Request-Id propagation**
     - **Validates: Requirements 8.4**
     - `fast-check` with random header values (including absent) against a minimal Express app using the middleware through `supertest`.
     - _Requirements: 8.4_
-  - [ ] 7.8 Implement the JSON request logger
+  - [x] 7.8 Implement the JSON request logger
     - `infrastructure/http/middleware/request-logger.middleware.ts` and a small `JsonLogger`: one line per request with `requestId`, `method`, `path`, `statusCode`, `durationMs` on `res.on('finish')`. The logger never logs the `x-origin-verify` header, other headers, or bodies.
     - Tests: the emitted line has the five fields and valid JSON; a request carrying `x-origin-verify: secret-value` produces output that does not contain `secret-value`.
     - _Requirements: 10.5, 17.1, 17.2_
-  - [ ] 7.9 Implement `OriginGuardMiddleware`
+  - [x] 7.9 Implement `OriginGuardMiddleware`
     - Reject with 403 and `{ statusCode: 403, code: 'FORBIDDEN_ORIGIN', message, details: [] }` when the header is missing or differs, using the helper from 7.4 and the provider from 7.5. Log a warning with the `requestId` set by `RequestIdMiddleware` (7.6) and reason `missing_header` or `invalid_header`. The body and the log never contain the expected or received value.
     - Unit tests: missing header, wrong header, correct header calls `next`, warning reason values and request id, response body has no secret.
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5, 17.2, 17.3_
-  - [ ] 7.10 Property test, guard rejects without a valid secret (Property 1)
+  - [x] 7.10 Property test, guard rejects without a valid secret (Property 1)
     - **Property 1: Origin guard rejects every request without a valid secret**
     - **Validates: Requirements 9.1, 9.2, 9.5, 9.6**
     - `fast-check`: random methods, random paths (including `/api/v1/health` and unknown routes) and random header values different from the secret; assert 403, exact error envelope, and that neither the secret nor the received value appears in the body.
     - _Requirements: 9.1, 9.2, 9.5, 9.6_
-  - [ ] 7.11 Property test, guard passes on a valid secret (Property 2)
+  - [x] 7.11 Property test, guard passes on a valid secret (Property 2)
     - **Property 2: Origin guard passes through on a valid secret**
     - **Validates: Requirements 9.3**
     - `fast-check`: random methods and paths with the correct header reach a probe handler (handler spy called once).
     - _Requirements: 9.3_
-  - [ ] 7.12 Implement `ResultExceptionFilter`
+  - [x] 7.12 Implement `ResultExceptionFilter`
     - Single filter returning `{ statusCode, code, message, details }`, no stack trace, logs the full error server-side as JSON without secrets. Unknown errors map to 500 `INTERNAL_ERROR` with a generic message; `HttpException` keeps its status (for example 404 `NOT_FOUND` for unknown routes).
     - Example tests: one per mapped error type, assert the envelope shape and that `stack` is absent.
     - _Requirements: 8.6, 10.6, 14.4, 17.1_
-  - [ ] 7.13 Property test, error responses never leak internals (Property 5)
+  - [x] 7.13 Property test, error responses never leak internals (Property 5)
     - **Property 5: Error responses never leak internals**
     - **Validates: Requirements 8.6, 10.6, 17.2**
     - `fast-check`: random thrown errors (random messages, stacks, attached env-like values); assert the response body has no stack-trace-shaped text (`at ` frames), no configured secret and no environment value.
     - _Requirements: 8.6, 10.6, 17.2_
-  - [ ] 7.14 Implement `HealthController`, `AppModule` and the app factory with supertest tests (Property 3)
+  - [x] 7.14 Implement `HealthController`, `AppModule` and the app factory with supertest tests (Property 3)
     - **Property 3: Health endpoint responds without side-effecting calls**
     - **Validates: Requirements 8.1, 8.2**
     - `health.controller.ts` returns `{ status: 'ok' }` with no injected dependencies. `app.module.ts` applies `RequestIdMiddleware`, `RequestLoggerMiddleware` and `OriginGuardMiddleware` (in that order) to all routes. Add `createApp()` (shared by `main.ts` and `lambda.ts`) that sets the global prefix `api/v1`, the exception filter and returns the initialized app.
     - supertest tests with the secret provider stubbed: valid header returns 200 and `{"status":"ok"}`; no header returns 403; unknown route `/api/v1/unknown` with a valid header returns a JSON 404 envelope; every response has `X-Request-Id`; with SSM, DynamoDB and payment clients mocked (`aws-sdk-client-mock`, spies), a few representative health requests produce zero calls to them.
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.6, 9.6, 3.7_
-  - [ ] 7.15 Implement `main.ts` and `lambda.ts`
+  - [x] 7.15 Implement `main.ts` and `lambda.ts`
     - Install `aws-lambda` types and a serverless HTTP adapter for Express (Function URL events). `main.ts`: `loadConfig()`, on `Err` exit with a message naming the variable, otherwise `createApp()` and `listen`. `lambda.ts`: module-level cached server initialized once per container; on config or SSM failure throw a startup error that names the parameter or variable only. Both files stay excluded from coverage.
     - Keep logic out of these files: extract anything testable (for example `bootstrap.ts` with `initServer(deps)` that is injected with config loader and secret provider) and cover it with Jest tests: one init per many invocations (loader called once), failing config rejects with the variable name only.
     - _Requirements: 7.2, 7.4, 9.7, 10.2_
-  - [ ] 7.16 Add the esbuild bundle and align the packaging scripts with `deploy.yml`
+  - [x] 7.16 Add the esbuild bundle and align the packaging scripts with `deploy.yml`
     - `api/tsconfig.build.json` (CommonJS, `experimentalDecorators`, `emitDecoratorMetadata`, `outDir: build`, tests excluded) and `api/scripts/build-lambda.ts` (run with `tsx`): step 1 `tsc -p tsconfig.build.json`; step 2 esbuild bundles `build/lambda.js` into `api/dist/lambda.js` (platform node, target node22, CommonJS, minify, no sourcemap upload) with `external` for the unused optional NestJS packages (`@nestjs/microservices`, `@nestjs/microservices/microservices-module`, `@nestjs/websockets`, `@nestjs/websockets/socket-module`, `class-transformer/storage`). Never bundle the `.ts` sources directly with esbuild: it drops decorator metadata and Nest dependency injection fails at runtime even though the `ts-jest` tests pass. `npm run build` runs the script. `dist/` must contain only `lambda.js`, so that `(cd dist && zip -qr ../lambda.zip .)` in `deploy.yml` puts `lambda.js` at the zip root (the Lambda handler is `lambda.handler`). There is no `npm run package` script: zipping is done by the workflow, and `lambda.zip` is git-ignored.
     - Jest integration test: run the bundler into a temp dir, assert the output directory holds exactly one `lambda.js`, that it exports `handler`, is smaller than a sane limit (for example 10 MB) and contains no `.env` values. Add an assertion that `package.json` defines no `package` script and that `build` ends with the bundler.
     - Bundled boot test (Requirement 10.1a): start a local HTTP stub that answers the SSM `GetParameter` call, point `AWS_ENDPOINT_URL_SSM` at it with dummy credentials and the required env vars, `require` the bundled `dist/lambda.js`, invoke `handler` with a Function URL (payload v2) event for `GET /api/v1/health` carrying the matching `X-Origin-Verify`, and assert status 200 and body `{"status":"ok"}`; a second invocation must not call the stub again (cold-start cache).
     - _Requirements: 10.1, 10.1a, 10.2, 10.3, 21.9_
 
-- [ ] 8. Checkpoint, API runtime
+- [x] 8. Checkpoint, API runtime
   - Run in `api/`: `npm run lint`, `npx tsc --noEmit`, `npm run depcruise`, `npm test -- --coverage` (all four metrics at least 80, working target 90), `npm run build`; run `bash scripts/check-forbidden-words.sh`.
   - Ensure all tests pass, ask the user if questions arise.
   - _Requirements: 3.6, 6.6_
