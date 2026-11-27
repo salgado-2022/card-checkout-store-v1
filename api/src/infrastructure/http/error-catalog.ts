@@ -94,8 +94,8 @@ export function toHttpException(err: ApplicationError | DomainError): CatalogHtt
     case 'PAYMENT_PROVIDER_ERROR':
       return fail('PAYMENT_PROVIDER_ERROR', err.kind);
     case 'INSUFFICIENT_STOCK':
-      // The available units are not echoed: the message stays a fixed literal.
-      return fail('INSUFFICIENT_STOCK', err.kind);
+      // The message stays a fixed literal; the available units travel in `details` as "field: rule".
+      return fail('INSUFFICIENT_STOCK', err.kind, [`quantity: available=${err.available}`]);
     case 'REPOSITORY_ERROR':
     case 'INVALID_TRANSITION':
     case 'INVALID_AMOUNTS':

@@ -17,6 +17,8 @@ const SECRET_KEY_FRAGMENTS = [
   'cardnumber',
   'credential',
   'originverify',
+  'signature',
+  'checksum',
 ];
 
 const isSecretKey = (name: string): boolean => {

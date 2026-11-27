@@ -233,7 +233,12 @@ describe('Feature: payments-api, Property 9: Provider resilience policy is profi
     // number of attempts made. pendingMocks() is not used because it deduplicates identical keys.
     // Real timers are used with the small FAST_TIMING, so no fake timers are needed here.
     const adapter = new PaymentGatewayAdapter(
-      { paymentApiUrl: BASE_URL, paymentPublicKey: PUBLIC_KEY },
+      {
+        paymentApiUrl: BASE_URL,
+        paymentPublicKey: PUBLIC_KEY,
+        paymentPrivateKeyParam: '/test/payment/private-key',
+        paymentIntegritySecretParam: '/test/payment/integrity-secret',
+      },
       FAST_TIMING,
     );
 

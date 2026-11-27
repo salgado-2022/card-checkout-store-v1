@@ -239,12 +239,37 @@ describe('infra/*.tf root module (static)', () => {
   });
 
   describe('Lambda and logs', () => {
-    it('runs the API Lambda on nodejs22.x with 512 MB and a 15 s timeout', () => {
+    it('runs the API Lambda on nodejs22.x with 512 MB and a 25 s timeout', () => {
       const lambda = findBlock(resourcesOf('aws_lambda_function'), 'api');
       const level = topLevel(lambda.body);
       expect(attribute(level, 'runtime')).toBe('"nodejs22.x"');
       expect(numericAttribute(level, 'memory_size')).toBe(512);
-      expect(numericAttribute(level, 'timeout')).toBe(15);
+      expect(numericAttribute(level, 'timeout')).toBe(25);
+    });
+    it('keeps the Lambda environment on exactly the tech-rule variable names', () => {
+      const lambda = findBlock(resourcesOf('aws_lambda_function'), 'api');
+      const environment = nestedBlocksOf(lambda.body, 'environment');
+      expect(environment).toHaveLength(1);
+      const names = [...environment[0].body.matchAll(/^[ \t]*([A-Z][A-Z0-9_]*)[ \t]*=/gm)]
+        .map((match) => match[1])
+        .sort();
+      expect(names).toEqual(
+        [
+          'BASE_FEE_IN_CENTS',
+          'DELIVERY_FEE_IN_CENTS',
+          'DYNAMODB_TABLE_CUSTOMERS',
+          'DYNAMODB_TABLE_DELIVERIES',
+          'DYNAMODB_TABLE_IDEMPOTENCY_KEYS',
+          'DYNAMODB_TABLE_PRODUCTS',
+          'DYNAMODB_TABLE_TRANSACTIONS',
+          'ORIGIN_VERIFY_SECRET_PARAM',
+          'PAYMENT_API_URL',
+          'PAYMENT_EVENTS_SECRET_PARAM',
+          'PAYMENT_INTEGRITY_SECRET_PARAM',
+          'PAYMENT_PRIVATE_KEY_PARAM',
+          'PAYMENT_PUBLIC_KEY',
+        ].sort(),
+      );
     });
 
     it('attaches the lambda-boundary permissions boundary to the execution role', () => {
@@ -319,6 +344,20 @@ describe('infra/*.tf root module (static)', () => {
       );
       expect(verify).toBeDefined();
       expect(verify?.body).toMatch(/value[ \t]*=[ \t]*random_password\.origin_verify\.result/);
+    });
+    it('sets a 30 s origin read timeout on the Lambda origin, above the 25 s Lambda timeout', () => {
+      const lambda = findBlock(resourcesOf('aws_lambda_function'), 'api');
+      const lambdaTimeout = numericAttribute(topLevel(lambda.body), 'timeout');
+      const origins = nestedBlocksOf(distribution.body, 'origin');
+      const lambdaOrigin = origins.find((origin) =>
+        /origin_id[ \t]*=[ \t]*local\.lambda_origin_id/.test(origin.body),
+      );
+      expect(lambdaOrigin).toBeDefined();
+      const customConfig = nestedBlocksOf(lambdaOrigin?.body ?? '', 'custom_origin_config');
+      expect(customConfig).toHaveLength(1);
+      const readTimeout = numericAttribute(topLevel(customConfig[0].body), 'origin_read_timeout');
+      expect(readTimeout).toBe(30);
+      expect(readTimeout).toBeGreaterThan(lambdaTimeout);
     });
   });
 

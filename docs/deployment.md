@@ -269,3 +269,7 @@ The repository is public, so the **Plan summary** in the job summary is public t
 ### Who runs `terraform apply`
 
 `terraform apply` runs only in `deploy.yml`, for a plan created in the same approved job. No workflow destroys infrastructure. Agents and CI never run `terraform apply` or any other change to AWS outside `deploy.yml`. The only manual infrastructure step is the one-time bootstrap in section 2.
+
+### Known limitations
+
+- Customer upsert looks up the customer by email in the `email` GSI, which is eventually consistent. Two `POST /customers` requests with the same new email sent at the same time can create two records. This is accepted for the scope of this assessment.

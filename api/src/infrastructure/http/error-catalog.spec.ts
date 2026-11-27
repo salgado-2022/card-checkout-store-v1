@@ -188,8 +188,13 @@ describe('toHttpException', () => {
   it('does not echo the available units of INSUFFICIENT_STOCK in the message', () => {
     const exception = toHttpException({ kind: 'INSUFFICIENT_STOCK', available: 7 });
 
-    expect(exception.getResponse()).toEqual(envelopeFor('INSUFFICIENT_STOCK'));
-    expect(JSON.stringify(exception.getResponse())).not.toContain('7');
+    expect(exception.getResponse()).toEqual(
+      envelopeFor('INSUFFICIENT_STOCK', ['quantity: available=7']),
+    );
+    expect(exception.getResponse()).toMatchObject({
+      message: envelopeFor('INSUFFICIENT_STOCK').message,
+    });
+    expect(envelopeFor('INSUFFICIENT_STOCK').message).not.toContain('7');
   });
 
   it('gives every code that has no kind yet a catalog entry', () => {
