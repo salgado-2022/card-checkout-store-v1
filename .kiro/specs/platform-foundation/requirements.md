@@ -334,7 +334,7 @@ Decisions fixed for this spec:
 
 1. THE Deploy_Role trust policy SHALL allow only the `sts:AssumeRoleWithWebIdentity` action from the GitHub_OIDC_Provider.
 2. THE Deploy_Role trust policy SHALL require the `aud` claim to equal `sts.amazonaws.com`.
-3. THE Deploy_Role trust policy SHALL require the `sub` claim to equal `repo:<owner>/<repo>:ref:refs/heads/master` or `repo:<owner>/<repo>:environment:production`, and SHALL accept no other `sub` value.
+3. THE Deploy_Role trust policy SHALL require the `sub` claim to equal `repo:<owner>@<owner_id>/<repo>@<repo_id>:ref:refs/heads/master` or `repo:<owner>@<owner_id>/<repo>@<repo_id>:environment:production`, where `owner_id` and `repo_id` are the numeric GitHub ids, and SHALL accept no other `sub` value, including the format without ids.
 4. THE Deploy_Role permission policy SHALL allow only actions on S3, CloudFront, Lambda, DynamoDB, SSM Parameter Store, IAM, CloudWatch Logs and AWS Budgets that Terraform and the Deploy_Pipeline need for the resources of Requirement 12 and Requirement 16.
 5. THE Deploy_Role permission policy SHALL limit S3, DynamoDB, SSM, Lambda and CloudWatch Logs actions to resources whose names use the project prefix, and SHALL limit IAM actions to the roles and policies of the Lambda_Function.
 5a. THE Deploy_Role permission policy SHALL limit SSM write actions to the Origin_Verify_Secret parameter and SHALL grant no action on the Payment_Secret_Parameters.

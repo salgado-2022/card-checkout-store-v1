@@ -329,7 +329,7 @@ Conventions for every task:
     - Agents must not run `git commit` or `git push`.
     - _Requirements: 18.5_
   - [x] 14.2 **[MANUAL]** Run `infra/bootstrap` once with your own AWS credentials
-    - In `infra/bootstrap/` with your own credentials: `terraform init`, `terraform plan -var ...`, review, `terraform apply` (`github_owner=salgado-2022`, `github_repo=card-checkout-store`, a globally unique `state_bucket_name`, `project_name`). Note the outputs `deploy_role_arn` and `state_bucket_name`. Keep the local state file outside git.
+    - In `infra/bootstrap/` with your own credentials: `terraform init`, `terraform plan -var ...`, review, `terraform apply` (`github_owner=salgado-2022`, `github_owner_id=109880782`, `github_repo=card-checkout-store`, `github_repo_id=1473672119`, a globally unique `state_bucket_name`, `project_name`). Note the outputs `deploy_role_arn` and `state_bucket_name`. Keep the local state file outside git.
     - Agents must not run `terraform apply` or `terraform destroy`.
     - _Requirements: 19.1, 19.4, 19.6, 24.2, 24.8_
   - [x] 14.3 **[MANUAL]** Create the GitHub Environment and load the Deploy_Variables

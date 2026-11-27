@@ -132,7 +132,7 @@ Developer (before 1st deploy)  -> creates 3 payment secrets in SSM with the AWS 
     README.md                        short pointer to docs/deployment.md and local validate commands
     bootstrap/                       one-time module, LOCAL state (git-ignored)
       main.tf                        State_Bucket, GitHub_OIDC_Provider, Deploy_Role, Deploy_Role policy
-      variables.tf                   github_owner, github_repo, state_bucket_name, project_name
+      variables.tf                   github_owner, github_owner_id, github_repo, github_repo_id, state_bucket_name, project_name
       outputs.tf                     deploy_role_arn, state_bucket_name
   docs/
     deployment.md                    one-time manual setup, Deploy_Variables table, first deploy, secret replacement, manual smoke test
@@ -480,7 +480,7 @@ The module has no `backend` block, so its state is a local `terraform.tfstate` t
 | `aws_iam_role.deploy` | trust policy below, `max_session_duration = 3600` |
 | `aws_iam_role_policy.deploy` | least-privilege policy below |
 
-Variables: `github_owner`, `github_repo`, `state_bucket_name`, `project_name`. Outputs: `deploy_role_arn`, `state_bucket_name` (Requirement 19.5, 19.6).
+Variables: `github_owner`, `github_owner_id`, `github_repo`, `github_repo_id`, `state_bucket_name`, `project_name`. Outputs: `deploy_role_arn`, `state_bucket_name` (Requirement 19.5, 19.6).
 
 ### Deploy_Role trust policy
 
@@ -502,15 +502,15 @@ data "aws_iam_policy_document" "deploy_trust" {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_owner}/${var.github_repo}:ref:refs/heads/master",
-        "repo:${var.github_owner}/${var.github_repo}:environment:production",
+        "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:ref:refs/heads/master",
+        "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:production",
       ]
     }
   }
 }
 ```
 
-The repository value in the Developer's setup is `salgado-2022/card-checkout-store`. The `sub` condition uses `StringEquals` with exactly the two values, never `StringLike` or a wildcard (Requirement 20.1 to 20.3). The `plan` job (no environment) presents the `ref:refs/heads/master` subject; the jobs that declare `environment: production` present the `environment:production` subject.
+The repository value in the Developer's setup is `salgado-2022@109880782/card-checkout-store@1473672119` (owner id and repository id from `gh api`). GitHub sends these immutable ids in the `sub` claim, so a repository deleted and re-created under the same name does not match. The `sub` condition uses `StringEquals` with exactly the two values, never `StringLike` or a wildcard (Requirement 20.1 to 20.3). The `plan` job (no environment) presents the `ref:refs/heads/master` subject; the jobs that declare `environment: production` present the `environment:production` subject.
 
 ### Deploy_Role permission policy
 
@@ -795,7 +795,7 @@ For any completed production build of the Web_App, the emitted bundle contains n
 
 ### Property 12: Deploy role trust policy admits only this repository's master branch and production environment
 
-For any GitHub OIDC token claim set (any `aud`, any `sub` such as another repository, another branch, a pull request ref, another environment, a prefix or wildcard variant), the Deploy_Role trust policy admits the token if and only if `aud` equals `sts.amazonaws.com` and `sub` equals `repo:salgado-2022/card-checkout-store:ref:refs/heads/master` or `repo:salgado-2022/card-checkout-store:environment:production`. The only allowed action is `sts:AssumeRoleWithWebIdentity` and the only principal is the GitHub_OIDC_Provider.
+For any GitHub OIDC token claim set (any `aud`, any `sub` such as another repository, another branch, a pull request ref, another environment, a prefix or wildcard variant), the Deploy_Role trust policy admits the token if and only if `aud` equals `sts.amazonaws.com` and `sub` equals `repo:salgado-2022@109880782/card-checkout-store@1473672119:ref:refs/heads/master` or `repo:salgado-2022@109880782/card-checkout-store@1473672119:environment:production`. Subjects without the ids, or with any other owner or repository id, are rejected. The only allowed action is `sts:AssumeRoleWithWebIdentity` and the only principal is the GitHub_OIDC_Provider.
 
 **Validates: Requirements 20.1, 20.2, 20.3**
 

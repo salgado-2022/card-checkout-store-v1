@@ -22,6 +22,12 @@ plan -> apply -> deploy-api -> deploy-web -> smoke-test
 
 ## 2. Bootstrap
 
+Get the numeric ids first. GitHub puts them in the OIDC subject (`repo:<owner>@<owner_id>/<repo>@<repo_id>:...`), so the deploy role trusts this exact repository, even if another repository later takes the same name:
+```bash
+gh api users/<github-owner> --jq .id
+gh api repos/<github-owner>/<github-repo> --jq .id
+```
+
 Run the bootstrap module once, from your machine. It creates the Terraform state bucket, the deploy role (which trusts the existing GitHub OIDC provider), and the permissions boundary for the Lambda execution role.
 
 ```bash
@@ -31,13 +37,17 @@ terraform init
 
 terraform plan \
   -var github_owner=<github-owner> \
+  -var github_owner_id=<github-owner-id> \
   -var github_repo=<github-repo> \
+  -var github_repo_id=<github-repo-id> \
   -var state_bucket_name=<globally-unique-bucket-name> \
   -var project_name=card-checkout-store
 
 terraform apply \
   -var github_owner=<github-owner> \
+  -var github_owner_id=<github-owner-id> \
   -var github_repo=<github-repo> \
+  -var github_repo_id=<github-repo-id> \
   -var state_bucket_name=<globally-unique-bucket-name> \
   -var project_name=card-checkout-store
 ```
