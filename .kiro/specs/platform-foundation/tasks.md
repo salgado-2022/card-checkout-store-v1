@@ -219,68 +219,69 @@ Conventions for every task:
   - Ensure all tests pass, ask the user if questions arise.
   - _Requirements: 3.6, 6.6_
 
-- [ ] 9. Terraform base infrastructure (`infra/`)
-  - [ ] 9.1 Create providers, partial S3 backend, variables and Terraform version pin
+- [x] 9. Terraform base infrastructure (`infra/`)
+  - [x] 9.1 Create providers, partial S3 backend, variables and Terraform version pin
     - `providers.tf`: `terraform { required_version, required_providers { aws, random, archive }, backend "s3" { use_lockfile = true, encrypt = true } }` (partial backend: no `bucket`, `key` or `region` literals; the workflow passes them with `-backend-config`), `provider "aws" { region = "us-east-1" }`. No DynamoDB lock table.
     - `variables.tf`: `budget_notification_email` (no default, with a validation message naming the variable), `payment_api_url` (used by CSP `connect-src`), `payment_public_key` (public value, non-secret placeholder default that starts with `pub_`, e.g. `pub_test_placeholder`, because the API config rejects any other prefix), `project_name` default, `lambda_artifact_path` optional.
     - _Requirements: 12.1, 12.2, 16.4, 13.7_
-  - [ ] 9.2 Define the private web bucket
+  - [x] 9.2 Define the private web bucket
     - `s3.tf`: `aws_s3_bucket.web`, public access block (all four flags true), bucket policy allowing `s3:GetObject` only to `cloudfront.amazonaws.com` with `AWS:SourceArn` equal to the distribution ARN.
     - _Requirements: 12.3_
-  - [ ] 9.3 Define the five DynamoDB tables
+  - [x] 9.3 Define the five DynamoDB tables
     - `dynamodb.tf`: `billing_mode = "PROVISIONED"`, no autoscaling resources, no point-in-time recovery. Capacity: `products` 2/1; `customers` 2/2 with GSI `email` 1/1; `transactions` 3/3 with GSI `reference` 1/1; `deliveries` 2/2; `idempotency_keys` 1/2 with TTL on `expiresAt`. Total 12 RCU and 12 WCU.
     - _Requirements: 12.8, 12.9, 12.10, 16.3_
-  - [ ] 9.4 Define the SSM SecureString parameters and the generated origin secret
+  - [x] 9.4 Define the SSM SecureString parameters and the generated origin secret
     - `ssm.tf`: one standard `SecureString` parameter `/<project_name>/origin/verify-secret` with the default AWS managed key (no `key_id`), value from `random_password.origin_verify` (length 48, `special = false`), which also feeds the CloudFront custom header. The three Payment_Secret_Parameters (`/<project_name>/payment/private-key`, `/<project_name>/payment/integrity-secret`, `/<project_name>/payment/events-secret`) are NOT declared as `aws_ssm_parameter` resources or data sources: a `locals` block builds only their names and ARNs (Lambda environment and IAM policy), so their values never enter the state or a plan. No real secret in any `.tf` file.
     - _Requirements: 12.11, 12.11a, 12.11b, 13.2, 6.1_
-  - [ ] 9.5 Define the Lambda function, Function URL, IAM role and log group
+  - [x] 9.5 Define the Lambda function, Function URL, IAM role and log group
     - `lambda.tf`: runtime `nodejs22.x`, handler `lambda.handler`, `memory_size = 512`, `timeout = 15`, Function URL with `authorization_type = "NONE"` plus two `aws_lambda_permission` resources, `lambda:InvokeFunctionUrl` (`principal = "*"`, `function_url_auth_type = "NONE"`) and `lambda:InvokeFunction` (`principal = "*"`, `invoked_via_function_url = true` if the pinned AWS provider supports it) — without both, CloudFront gets 403 from the Function URL (Requirement 12.7a); log group `/aws/lambda/<name>` with `retention_in_days = 7`. Initial code from a tiny placeholder zip (`archive_file`) with `lifecycle { ignore_changes = [filename, source_code_hash] }` so `deploy-api` owns the real code and later applies do not revert it. Environment variables: parameter names (not values), table names (`DYNAMODB_TABLE_PRODUCTS`, `DYNAMODB_TABLE_CUSTOMERS`, `DYNAMODB_TABLE_TRANSACTIONS`, `DYNAMODB_TABLE_DELIVERIES`, `DYNAMODB_TABLE_IDEMPOTENCY_KEYS`, each set to the matching `aws_dynamodb_table` name), fee values, `PAYMENT_API_URL` from `var.payment_api_url`, `PAYMENT_PUBLIC_KEY` from `var.payment_public_key`.
+    - The Lambda execution role declares `permissions_boundary` = `arn:aws:iam::<account>:policy/<project_name>-lambda-boundary`, the policy created by `infra/bootstrap`.
     - IAM role with least privilege: `ssm:GetParameter` on the four parameter ARNs, DynamoDB item and query actions on the five table ARNs and `table/*/index/*`, `logs:CreateLogStream` and `logs:PutLogEvents` on its own log group. No wildcard resources except the index suffix.
     - _Requirements: 12.7, 12.7a, 12.12, 12.13, 10.3, 10.4, 17.4_
-  - [ ] 9.6 Define the SPA rewrite CloudFront Function
+  - [x] 9.6 Define the SPA rewrite CloudFront Function
     - `cloudfront_function.tf`: `aws_cloudfront_function.spa_rewrite` (runtime `cloudfront-js-2.0`, `viewer-request`), body inline between marker comments `// SPA_REWRITE_START` and `// SPA_REWRITE_END`. Rewrite to `/index.html` when the URI has no file extension and does not start with `/api/`; otherwise return the request unchanged. Inline keeps the repository free of `.js` logic files.
     - _Requirements: 12.5, 14.1, 14.2_
-  - [ ] 9.7 Define the Response Headers Policy
+  - [x] 9.7 Define the Response Headers Policy
     - In `cloudfront.tf` (or `cloudfront_headers.tf`): `aws_cloudfront_response_headers_policy.security` with `Strict-Transport-Security`, `Content-Security-Policy` (`default-src 'self'`, `script-src`, `style-src`, `img-src` `'self'`, `connect-src 'self'` plus `var.payment_api_url`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` (custom header block).
     - _Requirements: 13.3, 13.7_
-  - [ ] 9.8 Define the CloudFront distribution
+  - [x] 9.8 Define the CloudFront distribution
     - `cloudfront.tf`: OAC for S3; origin S3 (default behavior) with the SPA function on `viewer-request`; origin Lambda Function URL (domain derived from the URL, `https-only`) with custom header `X-Origin-Verify` whose value is `random_password.origin_verify.result`; ordered behavior `/api/*` with the managed CachingDisabled policy, all HTTP methods allowed, the managed `AllViewerExceptHostHeader` origin request policy, and the security headers policy on both behaviors; `viewer_protocol_policy = "redirect-to-https"`; `cloudfront_default_certificate = true`; no `custom_error_response` blocks; `default_root_object = "index.html"`.
     - _Requirements: 12.4, 12.5, 12.6, 13.1, 13.2, 14.4, 15.3_
-  - [ ] 9.9 Define the budget alarm
+  - [x] 9.9 Define the budget alarm
     - `budget.tf`: `aws_budgets_budget` 1 USD monthly, notification `ACTUAL` at 80% and `FORECASTED` at 100%, recipient `var.budget_notification_email`.
     - _Requirements: 16.1, 16.2, 16.4_
-  - [ ] 9.10 Define the outputs
+  - [x] 9.10 Define the outputs
     - `outputs.tf`: `distribution_domain_name`, `distribution_id`, `web_bucket_name`, `lambda_function_name` (the four values `deploy.yml` reads); `origin_verify_secret` only if exposed, with `sensitive = true`.
     - _Requirements: 12.16, 13.2, 21.11_
-  - [ ] 9.11 Static test of the Terraform files
+  - [x] 9.11 Static test of the Terraform files
     - Jest test `api/test/infra/terraform-static.spec.ts` that reads `infra/*.tf` (not `infra/bootstrap`) as text: region is `us-east-1`; `backend "s3"` is present with `use_lockfile = true` and `encrypt = true` and has no `bucket`, `key` or `region` literal; no `dynamodb_table` argument and no DynamoDB lock table; none of `aws_api_gateway`, `aws_apigatewayv2`, `aws_vpc`, `aws_nat_gateway`, `aws_db_instance`, `aws_rds`, `aws_secretsmanager`, `aws_wafv2`, `aws_route53`, `aws_lb`, `aws_alb`, `PAY_PER_REQUEST` appear; every DynamoDB table uses `PROVISIONED`; summed read and write capacity of tables and GSIs equals 12 and 12 (at most 25 each); `retention_in_days = 7`; `memory_size = 512`, `timeout = 15`, `nodejs22.x`, both `lambda:InvokeFunctionUrl` and `lambda:InvokeFunction` permissions; no `custom_error_response`; `redirect-to-https`; the six security header names are present; `budget_notification_email` has no default; `ssm.tf` has a `random_password` for the origin secret and no `key_id`; no `aws_ssm_parameter` resource or `data "aws_ssm_parameter"` refers to a `/payment/` name anywhere in `infra/`; the origin header value references the `random_password` result; no string matching `prv_`; no forbidden word.
     - _Requirements: 12.1, 12.2, 12.5, 12.6, 12.7, 12.7a, 12.8, 12.9, 12.11, 12.11a, 12.11b, 12.12, 12.14, 13.2, 13.3, 16.3, 16.4, 6.5_
-  - [ ] 9.12 Property test of the SPA rewrite logic (Property 10)
+  - [x] 9.12 Property test of the SPA rewrite logic (Property 10)
     - **Property 10: SPA rewrite applies only to extension-less, non-API paths**
     - **Validates: Requirements 14.1, 14.2**
     - Jest test `api/test/infra/spa-rewrite.spec.ts`: extract the function body between the markers in `cloudfront_function.tf`, evaluate it with `new Function`, and with `fast-check` generate random paths (with and without extension, with and without the `/api/` prefix, nested segments). Assert the rewrite only for extension-less non-API paths and no change otherwise. Include example cases `/`, `/some/deep/route`, `/assets/app.abc123.js`, `/api/v1/unknown-route`.
     - _Requirements: 14.1, 14.2, 14.3, 14.4_
-  - [ ] 9.13 Format and validate Terraform locally (no backend, no AWS calls)
+  - [x] 9.13 Format and validate Terraform locally (no backend, no AWS calls)
     - In `infra/`: run `terraform fmt -check -recursive`, `terraform init -backend=false`, `terraform validate`. Never run `terraform init` with the S3 backend, `plan` or `apply`. Also confirm that validation without `budget_notification_email` fails and names the variable (do not run `terraform plan`).
     - If the Terraform CLI is not installed, report that and do not skip silently.
     - _Requirements: 12.15, 16.4_
 
-- [ ] 10. Bootstrap module (`infra/bootstrap`)
-  - [ ] 10.1 Create the bootstrap module skeleton and the state bucket
+- [x] 10. Bootstrap module (`infra/bootstrap`)
+  - [x] 10.1 Create the bootstrap module skeleton and the state bucket
     - `infra/bootstrap/main.tf`, `variables.tf`, `outputs.tf`: `terraform` block with `required_providers` and NO `backend` block (local state), `provider "aws" { region = "us-east-1" }`. Variables `github_owner`, `github_repo`, `state_bucket_name`, `project_name` (no defaults). Resources `aws_s3_bucket.state` (`force_destroy = false`), `aws_s3_bucket_versioning.state` (Enabled), `aws_s3_bucket_server_side_encryption_configuration.state` (`AES256`), `aws_s3_bucket_public_access_block.state` (all four true). Output `state_bucket_name`.
     - Jest test `api/test/infra/bootstrap-state.spec.ts` (text-based): no `backend` block, region `us-east-1`, versioning `Enabled`, SSE `AES256`, all four public access flags `true`, the four variables exist, no secret-like strings, no `aws_access_key` or `aws_iam_user`.
     - _Requirements: 19.1, 19.2, 19.5, 19.6, 19.9_
-  - [ ] 10.2 Add the OIDC provider and the deploy role trust policy (Property 12)
+  - [x] 10.2 Add the OIDC provider and the deploy role trust policy (Property 12)
     - **Property 12: Deploy role trust policy admits only this repository's master branch and production environment**
     - **Validates: Requirements 20.1, 20.2, 20.3**
     - Append to `main.tf`: `aws_iam_openid_connect_provider.github` (`url = "https://token.actions.githubusercontent.com"`, `client_id_list = ["sts.amazonaws.com"]`), `data.aws_iam_policy_document.deploy_trust` exactly as in the design (single action `sts:AssumeRoleWithWebIdentity`, principal type `Federated` = the provider ARN, `StringEquals` on `aud` and on `sub` with the two subjects built from `var.github_owner`/`var.github_repo`, never `StringLike` or wildcards) and `aws_iam_role.deploy` with `max_session_duration = 3600`. Add output `deploy_role_arn` to `outputs.tf`.
     - Test helper `api/test/infra/helpers/trust-policy.ts`: parses the trust policy block from the HCL text into `{ actions, principals, tests, aud, subs }` and evaluates a claim set against it. Test `api/test/infra/bootstrap-trust.spec.ts`: example assertions of the static structure (single action, `StringEquals`, no `*`, `max_session_duration = 3600`, provider URL and client id); `fast-check` generates `sub` and `aud` values (other owners and repos, other branches, `pull_request` refs, other environments, prefix and wildcard variants) and asserts admission if and only if `aud` is `sts.amazonaws.com` and `sub` is one of the two exact subjects for `salgado-2022/card-checkout-store`.
     - _Requirements: 19.3, 19.4, 19.6, 20.1, 20.2, 20.3, 20.9_
-  - [ ] 10.3 Add the least-privilege deploy role permission policy
-    - Append to `main.tf`: `aws_iam_role_policy.deploy` with one statement per service as in the design table (S3 state with `GetObject`/`PutObject`/`DeleteObject`/`ListBucket`/`GetBucketVersioning` on the State_Bucket only; S3 web, Lambda, DynamoDB, CloudWatch Logs and Budgets scoped to the `project_name` prefix; SSM scoped to `parameter/<project_name>/origin/*` only, with no action on `/<project_name>/payment/*`; CloudFront on `*` because it has no name-scoped creation ARNs; IAM limited to `role/<project_name>-lambda-*` with `iam:PassRole` conditioned on `iam:PassedToService = lambda.amazonaws.com`). Use `data.aws_caller_identity` for the account id.
+  - [x] 10.3 Add the least-privilege deploy role permission policy
+    - Append to `main.tf`: `aws_iam_role_policy.deploy` with one statement per service as in the design table (S3 state with `GetObject`/`PutObject`/`DeleteObject`/`ListBucket`/`GetBucketVersioning` on the State_Bucket only; S3 web, Lambda, DynamoDB, CloudWatch Logs and Budgets scoped to the `project_name` prefix; SSM scoped to `parameter/<project_name>/origin/*` only, with no action on `/<project_name>/payment/*`; CloudFront on `*` because it has no name-scoped creation ARNs; IAM limited to `role/<project_name>-lambda-exec` only: `CreateRole`, `PutRolePolicy`, `DeleteRolePolicy` and `PutRolePermissionsBoundary` conditioned on `iam:PermissionsBoundary` equal to the `<project_name>-lambda-boundary` policy created in this module; `iam:DeleteRolePermissionsBoundary` denied on `role/*`; no `AttachRolePolicy` or `DetachRolePolicy` and no action on `policy/*`; `iam:PassRole` conditioned on `iam:PassedToService = lambda.amazonaws.com`). Use `data.aws_caller_identity` for the account id.
     - Jest test `api/test/infra/bootstrap-policy.spec.ts` (text-based): no `"*:*"`, no `iam:*`, no `iam:CreateUser`, no `iam:CreateAccessKey`, no `Resource = "*"` outside the allowed actions (CloudFront actions, `ssm:DescribeParameters`, `logs:DescribeLogGroups`); every IAM statement has a `role/${var.project_name}-lambda-` resource; S3, Lambda, DynamoDB, SSM and Logs resources contain the `project_name` prefix; the State_Bucket statement includes the bucket and `bucket/*` (lock file); the SSM statement covers only `/origin/` and nothing grants access to `/payment/`; no statement references the OIDC provider or the deploy role itself; only the eight services of Requirement 20.4 appear.
     - _Requirements: 20.4, 20.5, 20.5a, 20.6, 20.7, 20.8_
-  - [ ] 10.4 Format and validate the bootstrap module locally
+  - [x] 10.4 Format and validate the bootstrap module locally
     - In `infra/bootstrap/`: run `terraform fmt -check`, `terraform init -backend=false`, `terraform validate`. Never run `plan` or `apply`. Leave the `.terraform/` directory in place (it is git-ignored, and agents cannot delete files). If the Terraform CLI is not installed, report that and do not skip silently.
     - _Requirements: 19.8_
 
