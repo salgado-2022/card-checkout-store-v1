@@ -118,3 +118,18 @@ describe('DynamoDB grants for the seed and the Scan (task 1.14)', () => {
     });
   });
 });
+
+describe('CloudFront grants for the custom /api/* origin request policy', () => {
+  const cloudFront = blockWithSid(bootstrapTf, 'CloudFront');
+
+  it.each([
+    'cloudfront:CreateOriginRequestPolicy',
+    'cloudfront:GetOriginRequestPolicy',
+    'cloudfront:GetOriginRequestPolicyConfig',
+    'cloudfront:UpdateOriginRequestPolicy',
+    'cloudfront:DeleteOriginRequestPolicy',
+    'cloudfront:ListOriginRequestPolicies',
+  ])('lets the deploy role manage the policy with %s', (action) => {
+    expect(cloudFront).toContain(`"${action}"`);
+  });
+});
