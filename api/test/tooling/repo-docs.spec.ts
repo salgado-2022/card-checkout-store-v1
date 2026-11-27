@@ -21,6 +21,10 @@ describe('repository documentation (task 1.3)', () => {
         expect(readme).toContain(command);
       },
     );
+
+    it('links to the deployment guide', () => {
+      expect(readme).toContain('](docs/deployment.md)');
+    });
   });
 
   describe('.github/pull_request_template.md', () => {

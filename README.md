@@ -2,7 +2,17 @@
 
 A single-product card checkout store for Colombia. Prices and payments use COP, integer cents everywhere. Card payments run against a payment provider sandbox. This is a technical assessment project, not a production store.
 
-> Stub. The full README (architecture, deployment, API reference and screenshots) is completed in task 12.2.
+Live environment: https://<distribution-domain> (added after the first deployment)
+
+## Deployment
+
+The deployment guide, with the one-time setup, the deploy variables and the verification steps, is in [docs/deployment.md](docs/deployment.md).
+
+After CI passes on `master`, GitHub Actions runs the `deploy` workflow. It plans the infrastructure, then applies it and deploys the API and the web app to AWS (`us-east-1`). The `apply`, `deploy-api` and `deploy-web` jobs wait for a manual approval in the `production` environment, so no change reaches AWS without a reviewer.
+
+## Cost
+
+The stack uses only AWS services in the always-free tier: Lambda, DynamoDB provisioned capacity, CloudFront, S3, SSM Parameter Store and CloudWatch Logs with 7-day retention. A 1 USD AWS Budgets alarm emails the address in `BUDGET_NOTIFICATION_EMAIL` when actual spend reaches 80% of the limit and when forecast spend reaches 100%.
 
 ## Scope
 
