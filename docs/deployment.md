@@ -61,7 +61,19 @@ terraform output -raw state_bucket_name
 
 The bootstrap uses local state, so `infra/bootstrap/terraform.tfstate` stays on your machine. It is git-ignored. Keep a backup of that file outside the repository, for example in an encrypted private location. If you lose it, you cannot manage the bootstrap resources with Terraform any more.
 
-Bootstrap is the only manual infrastructure step. After it, all changes to `infra/` reach AWS through the `deploy` workflow.
+The bootstrap apply is the only manual infrastructure step. The developer re-applies it only when `infra/bootstrap` changes, as this branch requires. After it, all changes to `infra/` reach AWS through the `deploy` workflow.
+
+> **Before deploying the `feat/HU-01-catalog-foundation` branch**, re-run the bootstrap apply once, with the exact same variables used the first time. Only the developer runs it, from a local machine. No workflow runs it.
+>
+> ```bash
+> cd infra/bootstrap
+> terraform apply \
+>   -var github_owner=<github-owner> -var github_owner_id=<github-owner-id> \
+>   -var github_repo=<github-repo> -var github_repo_id=<github-repo-id> \
+>   -var state_bucket_name=<your-state-bucket-name> -var project_name=card-checkout-store
+> ```
+>
+> The re-apply adds `dynamodb:Scan` on the products table to the Lambda permissions boundary. It also adds `dynamodb:PutItem`, `dynamodb:GetItem` and `dynamodb:DeleteItem` on the same table to the Deploy_Role, so the `infra/` apply can create the four seeded products. Skipping this step makes `terraform apply` in `infra/` fail with an access-denied error on the seed items. If that apply got through, `GET /api/v1/products` would fail at runtime until the boundary is updated.
 
 ## 3. Production environment
 

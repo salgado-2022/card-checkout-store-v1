@@ -35,27 +35,27 @@ Conventions for every task:
 ### Branch `feat/HU-01-catalog-foundation`
 
 - [ ] 1. Catalog foundation: domain, ports, error pipeline, products and fees, Terraform seed and bootstrap grants
-  - [ ] 1.1 Declare the missing dependencies
+  - [x] 1.1 Declare the missing dependencies
     - In `api/package.json` add under `dependencies`: `@aws-sdk/client-dynamodb`, `@aws-sdk/lib-dynamodb`, `@nestjs/throttler`, `@nestjs/swagger`, `class-validator`, `class-transformer`, `ulid`. Add under `devDependencies`: `swagger-ui-dist`, `nock`. Keep existing entries. Use versions compatible with NestJS 11 and Node 22, then refresh `api/package-lock.json` with `npm install`.
     - Confirm `npm ci` exits 0, then confirm `npm run build` still exits 0 and the Lambda bundle keeps Nest DI working (extend the `external` list in `api/scripts/build-lambda.ts` only for optional Nest packages that fail to resolve, such as `@nestjs/swagger` peers).
     - Jest test `api/test/tooling/dependencies.spec.ts`: reads `package.json` and asserts each package above is in the right section, `nock` or `msw` is present, and neither `vitest` nor `mocha` appears.
     - _Requirements: 20.1, 20.2, 20.3, 20.4, 20.5_
-  - [ ] 1.2 Implement the domain layer
+  - [x] 1.2 Implement the domain layer
     - Files in `api/src/domain/`: `money.ts` (integer cents + `Currency` "COP", `add`, `multiply`, equality), `card-brand.ts` (`CardBrand` + type guard), `transaction-status.ts` (`TransactionStatus`, `FinalStatus`, `canTransitionTransaction`), `delivery-status.ts` (`DeliveryStatus`, `canTransitionDelivery`), `amounts.ts` (`computeAmounts(unitPriceInCents, quantity, baseFeeInCents, deliveryFeeInCents)` returning integer `subtotalInCents` and `totalInCents`), `reference.ts` (`ORD-<ULID>` value object and `isValidReference`), `errors.ts` (domain error union `INSUFFICIENT_STOCK`, `INVALID_TRANSITION`, `INVALID_AMOUNTS`), `entities.ts` (`Product`, `Customer`, `Transaction`, `Delivery` as plain interfaces with the fields of the Glossary and the data model). `amount-check.ts` is added in branch 3, next to the finalization core that uses it. Remove the `.gitkeep` of the folder.
     - No import from NestJS, the AWS SDK or an HTTP library. No `any` (the `no-explicit-any` domain lint rule applies).
     - Plain Jest tests, no mocks, 100% coverage of the domain: the vector price 12000000, quantity 2, base fee 300000, delivery fee 800000 gives `totalInCents` 25100000; every transition pair; reference format and rejection of malformed values; `Money` arithmetic and non-integer rejection.
     - _Requirements: 5.9, 5.10, 10.7, 17.1, 21.2_
-  - [ ] 1.3 Property test for the amounts invariant
+  - [x] 1.3 Property test for the amounts invariant
     - **Property 12: Amounts invariant**
     - **Validates: Requirements 5.9, 5.10, 21.2**
     - `fast-check` with `numRuns: 100` (pure function) over integer unit prices, quantity 1..5 and non-negative integer fees: `subtotalInCents = unitPrice × quantity`, `totalInCents` equals the sum of subtotal and both fees, and every field is an integer. Keep the known vector as a fixed example in the same file `api/src/domain/amounts.property.spec.ts`.
     - _Requirements: 5.9, 5.10, 21.2, 21.11, 21.17_
-  - [ ] 1.4 Property test for status transitions
+  - [x] 1.4 Property test for status transitions
     - **Property 32: The transition functions only allow the documented moves**
     - **Validates: Requirements 10.7**
     - `fast-check` with `numRuns: 100` (pure function) over all `(from, to)` pairs of the status unions: `canTransitionTransaction` is true only for PENDING → a final status, `canTransitionDelivery` is true only for PENDING → ASSIGNED, BACKORDER or CANCELLED. File `api/src/domain/transitions.property.spec.ts`.
     - _Requirements: 10.7, 21.17_
-  - [ ] 1.5 Define the ports and the shared application types
+  - [x] 1.5 Define the ports and the shared application types
     - Files in `api/src/application/ports/`: `product-repository.ts`, `customer-repository.ts`, `transaction-repository.ts` (with `finalize(input): ResultAsync<FinalizeOutcome, RepositoryError>`), `delivery-repository.ts`, `idempotency-repository.ts` (with `BeginOutcome` as the discriminated union of the design), `payment-gateway.ts` (`getAcceptanceTokens`, `create`, `getStatus`, `findByReference` with `ReconciliationOutcome`), `clock.ts`, `id-generator.ts`. Add one small port the design needs for the "warning log" and "alert log" behaviors without breaking the layering: `application-logger.ts` (`info`, `warn`, `alert` with a plain fields object). The `EventChecksumVerifier` port is not created here: task 6.2 creates it with its adapter, so cutting branch 6 leaves no unused port.
     - Document in comments which profile each `PaymentGateway` method runs under: `getAcceptanceTokens` and `create` under the Standard_Profile, `getStatus` and `findByReference` under the Single_Attempt_Profile. The provider status types (`ProviderStatus`, the create response and the `found` outcome of `ReconciliationOutcome`) carry `status`, `message`, `amountInCents`, `currency` and `reference`, the three fields the Amount_Check compares.
     - `ProductRepository` exposes `findAll` and `findById` only: the stock decrement exists only inside `TransactionRepository.finalize`, so no unused port method is left behind.
@@ -63,87 +63,87 @@ Conventions for every task:
     - Add `api/src/application/errors.ts`: `RepositoryError`, `PaymentGatewayError` and the `ApplicationError` union, each variant carrying only a `kind` and non-sensitive fields. Remove the `.gitkeep` files of `ports/` and `use-cases/` once real files exist.
     - Type-only files: no runtime code, no test needed beyond `npx tsc --noEmit`.
     - _Requirements: 17.2, 17.4, 17.9_
-  - [ ] 1.6 Create the in-memory fake ports for tests
+  - [x] 1.6 Create the in-memory fake ports for tests
     - In `api/test/support/`: `fake-clock.ts` (settable and advanceable), `fake-id-generator.ts` (deterministic ULID-shaped ids), `in-memory-product-repository.ts`, `in-memory-customer-repository.ts`, `in-memory-transaction-repository.ts` (including an in-memory `finalize` that honors the `status = PENDING` and `stock >= quantity` conditions), `in-memory-delivery-repository.ts`, `in-memory-idempotency-repository.ts` (implements every `BeginOutcome` branch, fresh versus stale decided with the fake clock and a 25 s window), `fake-payment-gateway.ts` (scriptable responses per call, records every call by method name so tests can assert `findByReference` or `create` were never called), `fake-application-logger.ts`.
     - Jest test `api/test/support/fakes.spec.ts` for the behaviors the later use-case tests rely on: conditional finalize, idempotency begin outcomes, scripted gateway call log.
     - _Requirements: 21.12_
-  - [ ] 1.7 Add the application-layer rule to dependency-cruiser
+  - [x] 1.7 Add the application-layer rule to dependency-cruiser
     - In `api/.dependency-cruiser.cjs` add `application-layer-allowed-imports`: files under `^src/application` may import only `^src/domain`, `^src/application`, `neverthrow` or a Node.js built-in (`node:` prefix or core module), and never `^src/infrastructure`, `@nestjs/`, `@aws-sdk/` or HTTP libraries. Keep the existing domain rules.
     - Extend `api/test/tooling/dependency-rule.spec.ts` with temp fixtures under a `src/application` tree via `it.each`: forbidden imports exit non-zero (`@nestjs/common`, `@aws-sdk/client-dynamodb`, `express`, `../infrastructure/x`); allowed imports exit zero (`neverthrow`, `node:crypto`, `crypto`, a relative domain import, a sibling application import). Also run `npm run depcruise` on the real tree and expect exit 0.
     - _Requirements: 17.5, 17.6_
-  - [ ] 1.8 Error catalog and Result-to-HTTP mapper
+  - [x] 1.8 Error catalog and Result-to-HTTP mapper
     - Create `api/src/infrastructure/http/error-catalog.ts`: `ERROR_CATALOG` with the 17 codes and statuses of the design, a fixed English message per code (a literal, never built from request data), and `toHttpException(err: ApplicationError | DomainError): HttpException` as a pure function with one `switch` arm per `err.kind` (`REPOSITORY_ERROR` and unknown kinds map to 500 `INTERNAL_ERROR`, `PAYMENT_PROVIDER_ERROR` to 502). The catalog is the single enumeration used by the mapper, the exception filter and, later, the OpenAPI script.
     - Extend the existing `result-exception.filter.ts` and the origin guard so every 4xx/5xx body is `{ statusCode, code, message, details }` using the single catalog: align the existing generic codes (`NOT_FOUND`, `CONFLICT`, ...) to `ROUTE_NOT_FOUND` with the fixed message "Route not found." and no request path, keep `FORBIDDEN_ORIGIN`, `PAYLOAD_TOO_LARGE`, `INTERNAL_ERROR` (fixed message, no stack trace, error written to the log). Update the existing filter and origin-guard specs that assert the old codes.
     - Tests: every catalog entry maps to its status; every `err.kind` has an arm; `ROUTE_NOT_FOUND` for an unknown route (supertest, no path echoed).
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.6, 13.8, 13.9, 17.9_
-  - [ ] 1.9 Content-type guard and validation pipeline
+  - [x] 1.9 Content-type guard and validation pipeline
     - Create `api/src/infrastructure/http/middleware/content-type-guard.middleware.ts` (next to `body-parser-error.middleware.ts`) and register it in `create-app.ts` before the body parser and before routing. On a POST that carries a body, it parses the `Content-Type` header into a media type and its parameters (split at `;`, trim, lower-case the media type and the parameter names, accept quoted parameter values) and never compares the raw header string. It lets the request continue only when the media type equals `application/json` and the `charset` parameter is either absent or equals `utf-8`, both compared case-insensitively. A missing header, any other media type (including `application/jsonx`) or any other `charset` answers 415 `UNSUPPORTED_MEDIA_TYPE` with the standard envelope, before the body is parsed. A POST with no body is not blocked by this guard.
     - Verify in `create-app.ts` that the global `ValidationPipe` has `whitelist`, `forbidNonWhitelisted` and `transform` enabled and that its `exceptionFactory` produces a 400 `VALIDATION_ERROR` with one `details` entry per failure holding the field name and the violated rule. Verify `X-Request-Id` is returned on 4xx and 5xx.
     - Tests with supertest on a minimal module, as a table with `it.each`. Accepted: `application/json`, `application/json; charset=utf-8`, `Application/JSON; Charset=UTF-8`. Rejected with 415: `text/plain`, `application/jsonx`, `application/json; charset=latin1`, `multipart/form-data`, and a missing `Content-Type` on a POST with a body. Also: a POST with no body is not answered 415 by the guard, 400 `details` shape, unknown property rejected, `X-Request-Id` present on every error.
     - _Requirements: 13.5, 13.7, 13.10, 13.11, 14.1, 14.6, 21.9, 21.16_
-  - [ ] 1.10 Shared infrastructure adapters and wiring
+  - [x] 1.10 Shared infrastructure adapters and wiring
     - Create `api/src/infrastructure/persistence/dynamodb-client.ts` (document client factory, region from the Lambda environment, `removeUndefinedValues: true`), `api/src/infrastructure/system/system-clock.ts` and `ulid-id-generator.ts` (implement `Clock` and `IdGenerator` with the `ulid` package), `api/src/infrastructure/http/logging/application-logger.adapter.ts` (implements `ApplicationLogger` on top of the existing JSON logger, carries `requestId` and the Reference when given). Add the Nest providers and injection tokens in `app.module.ts` (wiring only: no logic) and expose the validated `AppConfig` (table names and fees) as an injectable.
     - Tests: clock returns a `Date`; id generator returns a valid ULID and ids are unique and sortable; logger adapter writes one JSON line per call with the fields and without any key named like a secret.
     - _Requirements: 14.3, 17.7, 17.8_
-  - [ ] 1.11 DynamoDB product repository adapter
+  - [x] 1.11 DynamoDB product repository adapter
     - Create `api/src/infrastructure/persistence/product.repository.dynamodb.ts`: `findAll` uses `ScanCommand` with `ConsistentRead: true`, `findById` uses `GetCommand` with `ConsistentRead: true`; both return `Ok(null)` for a missing item and map any SDK exception to `Err({ kind: 'REPOSITORY_ERROR' })` without rethrowing and without the SDK message.
     - Tests with `aws-sdk-client-mock`: pagination of the scan through `LastEvaluatedKey`, field mapping, not found, SDK failure.
     - _Requirements: 1.1, 1.5, 1.7, 17.8, 17.9_
-  - [ ] 1.12 Use cases GetProducts, GetProduct and GetFees
+  - [x] 1.12 Use cases GetProducts, GetProduct and GetFees
     - Create `api/src/application/use-cases/get-products.ts` (sorted by `name` ascending, maps to the exact field set), `get-product.ts` (`null` gives `PRODUCT_NOT_FOUND`, also for an id of any format), `get-fees.ts` (pure function of the configured fees, always `Ok`, `currency` "COP"). Constructor injection of ports, no framework imports.
     - Tests with the in-memory fakes: ordering, stock 0 included, not found, repository error propagation, fee echo.
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 17.3, 17.4_
-  - [ ] 1.13 Products and fees controllers
+  - [x] 1.13 Products and fees controllers
     - Create `ProductsController` (`GET /products`, `GET /products/:id`) and `FeesController` (`GET /fees`) in `api/src/infrastructure/http/controllers/`, with response DTO classes carrying `@ApiProperty`/`@ApiResponse` decorators including the error envelope for 404. Controllers only call the use case and map the `Result` through `toHttpException`. Register the controllers and the use-case providers in `app.module.ts`. Read `BASE_FEE_IN_CENTS` and `DELIVERY_FEE_IN_CENTS` through the validated config (defaults 300000 and 800000 already enforced by the schema; add a test if missing).
     - supertest tests with the fake application layer: 200 shapes, 404 `PRODUCT_NOT_FOUND` for a missing id and for a malformed id, 200 fees.
     - _Requirements: 1.1, 1.2, 1.3, 1.5, 1.6, 2.1, 2.2, 13.9, 17.7, 18.1_
-  - [ ] 1.14 Bootstrap and Lambda grants: `dynamodb:Scan`, seed-item actions and the re-apply note
+  - [x] 1.14 Bootstrap and Lambda grants: `dynamodb:Scan`, seed-item actions and the re-apply note
     - In one change: `infra/lambda.tf` adds the statement `ProductsTableScan` (action `dynamodb:Scan`, resource `aws_dynamodb_table.products.arn` only). `infra/bootstrap/main.tf` adds the statement `ProductsTableScan` to `aws_iam_policy.lambda_boundary` and the statement `ProductsTableSeedItems` (`dynamodb:PutItem`, `dynamodb:GetItem`, `dynamodb:DeleteItem`) to `aws_iam_role_policy.deploy`, both with the literal resource `arn:aws:dynamodb:<region>:<account>:table/${var.project_name}-products` (no wildcard, no index, no other table). Keep the existing table-level `DynamoDb` statement untouched. Run `terraform fmt` on the edited files.
     - `docs/deployment.md`: amend section 2 to say bootstrap is the only recurring manual infrastructure step and add the prominent note of the design (Open Point C) telling the Developer to re-apply `infra/bootstrap` once, with the `terraform apply -var ...` command, before deploying this branch. The note explains that the re-apply adds `dynamodb:Scan` to the permissions boundary and the three item actions to the Deploy_Role, and that skipping it makes `terraform apply` fail with access denied on the seed items.
     - Static Jest tests in `api/test/infra/` (read the files as text, never apply): `dynamodb:Scan` appears in `lambda.tf` and `bootstrap/main.tf` only on the products table ARN, never with `index/`, never with `*`; in `bootstrap/main.tf` the `ProductsTableSeedItems` statement lists exactly `PutItem`, `GetItem` and `DeleteItem` on the products table ARN only, with no index and no wildcard; the bootstrap has no other new action; `docs/deployment.md` mentions `dynamodb:Scan`, `PutItem` and `infra/bootstrap`. Update `bootstrap-policy.spec.ts` if it asserts the exact action list.
     - _Requirements: 16.6, 16.7, 16.10, 19.3, 19.4, 19.5, 19.6, 21.14_
-  - [ ] 1.15 Terraform-seeded catalog and removal of the seed script
+  - [x] 1.15 Terraform-seeded catalog and removal of the seed script
     - `infra/dynamodb.tf`: add 4 `aws_dynamodb_table_item` resources (`product_1` to `product_4`) on `aws_dynamodb_table.products`, as in Open Point C. Each has a fixed ULID `id` (26 characters, Crockford alphabet), `sku`, `name`, `description` (plain text, no provider name), `imageUrl` of the form `/images/<slug>.webp`, `priceInCents` as an integer, `currency` "COP" and `stock`. Stock rule: one product with 0, one with 1, the other two with 5 and 10 (inside 2 to 20, so the evidence script finds a product with stock of at least 3). Every item declares `lifecycle { ignore_changes = [item] }`. Run `terraform fmt`.
     - Remove the placeholder `api/scripts/seed.ts`, remove `'/scripts/seed\\.ts$'` from `coveragePathIgnorePatterns` in `api/jest.config.ts` and from the expected list in `api/test/tooling/jest-config.spec.ts`. Confirm `api/package.json` has no `seed` script and `docs/deployment.md` and `README.md` have no manual seed step. Steering edits, limited to these two deletions and nothing else: remove the single line `scripts/seed.ts` from the tree in `.kiro/steering/structure.md`, and remove only the words ", seed script" from the "Allowed exclusions only" sentence of `.kiro/steering/tech.md`. Show the Developer the two-line diff of these project-rule files before the checkpoint, because the steering files are shared project rules.
     - Static Jest test `api/test/infra/seed-items.spec.ts` (reads `infra/*.tf` as text): exactly 4 `aws_dynamodb_table_item` resources and all on the products table; unique ids in ULID format; stock distribution (one 0, one 1, two in 2..20); `imageUrl` starts with `/images/` and ends with `.webp`; `currency` "COP"; `priceInCents` integer; `ignore_changes = [item]` on every item; `api/scripts/seed.ts` does not exist; `api/package.json` has no `seed` script; `docs/deployment.md` and `README.md` contain no seed step.
     - The `imageUrl` values must match the files the `checkout-web` spec adds under `web/public/images/`. Until then the deployed catalog shows broken images, which does not affect the API checks.
     - _Requirements: 16.1, 16.2, 16.3, 16.4, 16.5, 16.8, 16.9, 21.13, 21.14_
-  - [ ] 1.16 Property test for the product list
+  - [x] 1.16 Property test for the product list
     - **Property 1: Products are listed completely, sorted, with the exact field set**
     - **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over arbitrary product sets (including `stock` 0) through the HTTP layer with in-memory fakes: all products present, sorted by `name` ascending, exactly the eight fields. File `api/src/infrastructure/http/controllers/products.property.spec.ts`.
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 21.17_
-  - [ ] 1.17 Property test for strongly consistent reads
+  - [x] 1.17 Property test for strongly consistent reads
     - **Property 4: Strongly consistent product reads**
     - **Validates: Requirements 1.7**
     - `fast-check` with `numRuns: 100` (adapter level, no HTTP). With `aws-sdk-client-mock`, for any list or detail call through the real adapter, the recorded DynamoDB command input has `ConsistentRead: true`.
     - _Requirements: 1.7, 21.17_
-  - [ ] 1.18 Property test for the fees endpoint
+  - [x] 1.18 Property test for the fees endpoint
     - **Property 5: Fees echo the configured values**
     - **Validates: Requirements 2.1, 2.2**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over non-negative integer fee pairs (and the defaults): `GET /fees` returns 200, `currency` "COP" and exactly those two values.
     - _Requirements: 2.1, 2.2, 21.17_
-  - [ ] 1.19 Property test for the error envelope
+  - [x] 1.19 Property test for the error envelope
     - **Property 36: Every error response uses the fixed envelope and the documented status**
     - **Validates: Requirements 13.1, 13.3, 13.4, 13.6, 13.8**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). Iterate `ERROR_CATALOG` so later codes are covered automatically: for each code, trigger or simulate it (a code whose route is not delivered, such as `INVALID_SIGNATURE` while branch 6 is not merged, is simulated through a throwing test-only controller), assert the body is exactly `{ statusCode, code, message, details }`, the status matches the catalog, and adversarial request values (path, header values, body fields from `fast-check` strings) never appear in `message`.
     - _Requirements: 13.1, 13.3, 13.4, 13.6, 13.8, 21.17_
-  - [ ] 1.20 Property test for the media-type guard
+  - [x] 1.20 Property test for the media-type guard
     - **Property 37: The media-type guard accepts exactly `application/json` with an absent or `utf-8` charset, case-insensitively, and rejects everything else before any body parsing**
     - **Validates: Requirements 13.5, 13.10, 13.11**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). Generate accepted values by random casing of `application/json` with optional spaces around `;` and an optional `charset=utf-8` in any casing: every one continues the request. Generate rejected values from other media types, near misses such as `application/jsonx`, other charsets (`latin1`, `utf-16`, empty) and a missing header: every one answers 415 `UNSUPPORTED_MEDIA_TYPE` and the JSON parser never runs (assert with a spy on the body parser or a body that would fail parsing).
     - _Requirements: 13.5, 13.10, 13.11, 21.16, 21.17_
-  - [ ] 1.21 Property test for request id and origin guard
+  - [x] 1.21 Property test for request id and origin guard
     - **Property 38: Every response carries a request id, and the origin guard is absolute**
     - **Validates: Requirements 14.1, 14.2**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over methods, paths and headers: every response has `X-Request-Id`; any business route without a valid `X-Origin-Verify` answers 403 `FORBIDDEN_ORIGIN`.
     - _Requirements: 14.1, 14.2, 21.17_
-  - [ ] 1.22 Property test for unexpected adapter failures
+  - [x] 1.22 Property test for unexpected adapter failures
     - **Property 43: Unexpected adapter failures are translated, never leaked**
     - **Validates: Requirements 17.9**
     - `fast-check` with `numRuns: 100` (adapter and use-case level with `aws-sdk-client-mock`, no HTTP). A mocked SDK that rejects with arbitrary errors (messages carrying `fast-check` strings) behind the product repository and the use cases: the adapter returns an `Err` `REPOSITORY_ERROR` that holds no trace of the original message or stack. One example test through supertest asserts the HTTP translation: 500 `INTERNAL_ERROR` with the fixed message, no stack and no original message in the body or the log output of the response.
     - _Requirements: 17.9, 21.17_
-  - [ ] 1.23 Checkpoint, `feat/HU-01-catalog-foundation`
+  - [x] 1.23 Checkpoint, `feat/HU-01-catalog-foundation`
     - Run `npm run lint`, `npx tsc --noEmit`, `npm test -- --coverage` (all four metrics at least 80), `npm run build`, `npm run depcruise`, `bash scripts/check-forbidden-words.sh` from the repo root (no findings). Run `terraform fmt -check -recursive`, `terraform init -backend=false` and `terraform validate` in `infra/` and in `infra/bootstrap/`. Do not run `terraform plan` or `terraform apply`.
     - Confirm `api/jest.config.ts` excludes from coverage only `main.ts`, `lambda.ts`, wiring-only `*.module.ts` and `.d.ts`, and keeps the global threshold at 80 for the four metrics. Do not widen the exclusions in any later branch.
     - Ensure all tests pass, ask the user if questions arise.
