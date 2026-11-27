@@ -1,0 +1,122 @@
+import * as fs from 'fs';
+import * as path from 'path';
+
+const REPO_ROOT = path.resolve(__dirname, '../../..');
+const DEPLOYMENT_DOC = path.join(REPO_ROOT, 'docs', 'deployment.md');
+const INFRA_README = path.join(REPO_ROOT, 'infra', 'README.md');
+const WORDS_FILE = path.join(REPO_ROOT, '.kiro', 'private', 'forbidden-words.txt');
+
+const WORDS_EXIST = fs.existsSync(WORDS_FILE);
+if (!WORDS_EXIST) {
+  console.warn(`deployment-docs: ${WORDS_FILE} not found, forbidden-word check skipped`);
+}
+
+const SECTION_HEADINGS = [
+  '1. Prerequisites',
+  '2. Bootstrap',
+  '3. Production environment',
+  '4. Deploy variables',
+  '5. First deployment run',
+  '6. Payment secrets',
+  '7. Verification',
+  '8. Security notes',
+];
+
+const DEPLOY_VARIABLES = [
+  'AWS_ROLE_ARN',
+  'AWS_REGION',
+  'TF_STATE_BUCKET',
+  'BUDGET_NOTIFICATION_EMAIL',
+  'PAYMENT_API_URL',
+  'PAYMENT_PUBLIC_KEY',
+];
+
+const LOCAL_COMMANDS = [
+  'terraform fmt -check -recursive',
+  'terraform init -backend=false',
+  'terraform validate',
+];
+
+const FORBIDDEN_COMMANDS = ['terraform destroy', 'terraform taint'];
+
+function readForbiddenWords(): string[] {
+  return fs
+    .readFileSync(WORDS_FILE, 'utf8')
+    .split(/\r?\n/)
+    .map((word) => word.trim().toLowerCase())
+    .filter((word) => word.length > 0);
+}
+
+describe('docs/deployment.md', () => {
+  const doc = fs.readFileSync(DEPLOYMENT_DOC, 'utf8');
+  const lower = doc.toLowerCase();
+
+  it('starts with the H1 "Deployment guide"', () => {
+    expect(doc.split('\n')[0]).toBe('# Deployment guide');
+  });
+
+  it('has exactly the eight level-2 sections, in order', () => {
+    const headings = [...doc.matchAll(/^## (.+)$/gm)].map((match) => match[1].trim());
+    expect(headings).toEqual(SECTION_HEADINGS);
+  });
+
+  it.each(DEPLOY_VARIABLES)('documents the deploy variable %s', (name) => {
+    expect(doc).toContain(`\`${name}\``);
+  });
+
+  it('creates payment secrets as SecureString from a local file', () => {
+    expect(doc).toContain('--type SecureString');
+    expect(doc).toContain('file://');
+  });
+
+  it('explains how to overwrite a payment secret', () => {
+    expect(doc).toContain('--overwrite');
+  });
+
+  it('explains that a secret change needs a Lambda cold start', () => {
+    expect(lower).toContain('cold start');
+  });
+
+  it('requires protecting master and a required reviewer on production', () => {
+    expect(doc).toContain('Protect `master`');
+    expect(lower).toContain('required reviewer');
+  });
+
+  it('describes origin secret rotation through a keepers change in a pull request', () => {
+    expect(doc).toContain('keepers');
+    expect(doc).toContain('random_password.origin_verify');
+  });
+
+  it.each(FORBIDDEN_COMMANDS)('does not instruct to run "%s"', (command) => {
+    expect(lower).not.toContain(command);
+  });
+
+  it('contains no private key literal (prv_)', () => {
+    expect(doc).not.toMatch(/prv_/);
+  });
+
+  const forbiddenIt = WORDS_EXIST ? it : it.skip;
+  forbiddenIt('contains no forbidden word', () => {
+    const offenders = readForbiddenWords().filter((word) => lower.includes(word));
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('infra/README.md', () => {
+  const readme = fs.readFileSync(INFRA_README, 'utf8');
+
+  it.each(LOCAL_COMMANDS)('documents the local command "%s"', (command) => {
+    expect(readme).toContain(command);
+  });
+
+  it('links to docs/deployment.md', () => {
+    expect(readme).toContain('](../docs/deployment.md)');
+  });
+
+  const forbiddenIt = WORDS_EXIST ? it : it.skip;
+  forbiddenIt('contains no forbidden word', () => {
+    const lower = readme.toLowerCase();
+    const offenders = readForbiddenWords().filter((word) => lower.includes(word));
+    expect(offenders).toEqual([]);
+  });
+});

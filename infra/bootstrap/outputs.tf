@@ -4,7 +4,7 @@ output "state_bucket_name" {
 }
 
 output "deploy_role_arn" {
-  description = "ARN of the role assumed by GitHub Actions through OIDC. Stored in the AWS_DEPLOY_ROLE_ARN repository variable."
+  description = "ARN of the role assumed by GitHub Actions through OIDC. Stored in the AWS_ROLE_ARN repository variable."
   value       = aws_iam_role.deploy.arn
 }
 
