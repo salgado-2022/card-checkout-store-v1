@@ -1,0 +1,342 @@
+{
+  "info": {
+    "description": "Products, customers, transactions and deliveries for the card checkout store. Set baseUrl and originVerify before sending requests.",
+    "name": "Payments API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "item": [
+        {
+          "name": "GET /api/v1/health",
+          "request": {
+            "header": [
+              {
+                "key": "X-Origin-Verify",
+                "value": "{{originVerify}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "health"
+              ],
+              "raw": "{{baseUrl}}/api/v1/health"
+            }
+          }
+        }
+      ],
+      "name": "health"
+    },
+    {
+      "item": [
+        {
+          "name": "GET /api/v1/products",
+          "request": {
+            "header": [
+              {
+                "key": "X-Origin-Verify",
+                "value": "{{originVerify}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ],
+              "raw": "{{baseUrl}}/api/v1/products"
+            }
+          }
+        },
+        {
+          "name": "GET /api/v1/products/{id}",
+          "request": {
+            "header": [
+              {
+                "key": "X-Origin-Verify",
+                "value": "{{originVerify}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id"
+              ],
+              "raw": "{{baseUrl}}/api/v1/products/:id",
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "01HZX0000000000000000000AB"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "name": "products"
+    },
+    {
+      "item": [
+        {
+          "name": "GET /api/v1/fees",
+          "request": {
+            "header": [
+              {
+                "key": "X-Origin-Verify",
+                "value": "{{originVerify}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "fees"
+              ],
+              "raw": "{{baseUrl}}/api/v1/fees"
+            }
+          }
+        }
+      ],
+      "name": "fees"
+    },
+    {
+      "item": [
+        {
+          "name": "GET /api/v1/acceptance-tokens",
+          "request": {
+            "header": [
+              {
+                "key": "X-Origin-Verify",
+                "value": "{{originVerify}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "acceptance-tokens"
+              ],
+              "raw": "{{baseUrl}}/api/v1/acceptance-tokens"
+            }
+          }
+        }
+      ],
+      "name": "acceptance-tokens"
+    },
+    {
+      "item": [
+        {
+          "name": "POST /api/v1/customers",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"documentNumber\": \"1234567890\",\n  \"documentType\": \"CC\",\n  \"email\": \"ana.perez@example.com\",\n  \"fullName\": \"Ana Pérez\",\n  \"phone\": \"3001234567\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Origin-Verify",
+                "value": "{{originVerify}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers"
+              ],
+              "raw": "{{baseUrl}}/api/v1/customers"
+            }
+          }
+        },
+        {
+          "name": "GET /api/v1/customers/{id}",
+          "request": {
+            "header": [
+              {
+                "key": "X-Origin-Verify",
+                "value": "{{originVerify}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "customers",
+                ":id"
+              ],
+              "raw": "{{baseUrl}}/api/v1/customers/:id",
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "01HZX0000000000000000000AB"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "name": "customers"
+    },
+    {
+      "item": [
+        {
+          "name": "POST /api/v1/transactions",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"acceptPersonalAuth\": \"auth_test_fake\",\n  \"acceptanceToken\": \"acc_test_fake\",\n  \"customerId\": \"01HZX0000000000000000000CD\",\n  \"delivery\": {\n    \"addressLine1\": \"Calle 1 # 2-3\",\n    \"addressLine2\": \"Apto 401\",\n    \"city\": \"Bogotá\",\n    \"department\": \"Bogotá D.C.\",\n    \"phone\": \"3001234567\",\n    \"postalCode\": \"110111\",\n    \"recipientName\": \"Ana Pérez\"\n  },\n  \"payment\": {\n    \"brand\": \"VISA\",\n    \"cardToken\": \"tok_test_fake\",\n    \"installments\": 1,\n    \"lastFour\": \"4242\"\n  },\n  \"productId\": \"01HZX0000000000000000000AB\",\n  \"quantity\": 2\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-Origin-Verify",
+                "value": "{{originVerify}}"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions"
+              ],
+              "raw": "{{baseUrl}}/api/v1/transactions"
+            }
+          }
+        },
+        {
+          "name": "GET /api/v1/transactions/{id}",
+          "request": {
+            "header": [
+              {
+                "key": "X-Origin-Verify",
+                "value": "{{originVerify}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "transactions",
+                ":id"
+              ],
+              "raw": "{{baseUrl}}/api/v1/transactions/:id",
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "01HZX0000000000000000000AB"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "name": "transactions"
+    },
+    {
+      "item": [
+        {
+          "name": "GET /api/v1/deliveries/{id}",
+          "request": {
+            "header": [
+              {
+                "key": "X-Origin-Verify",
+                "value": "{{originVerify}}"
+              }
+            ],
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "deliveries",
+                ":id"
+              ],
+              "raw": "{{baseUrl}}/api/v1/deliveries/:id",
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "01HZX0000000000000000000AB"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "name": "deliveries"
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": ""
+    },
+    {
+      "key": "originVerify",
+      "value": ""
+    }
+  ]
+}
