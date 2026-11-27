@@ -52,6 +52,15 @@ const SYNC_IMMUTABLE =
 const INDEX_NO_CACHE = /aws s3 cp \S*index\.html \S+ --cache-control "no-cache"/;
 const CLOUDFRONT_INVALIDATION = /aws cloudfront create-invalidation\b/;
 const LAMBDA_CODE_UPDATE = /aws lambda update-function-code\b/;
+const SETUP_NODE_PREFIX = 'actions/setup-node@';
+const WEB_SYNC_EXCLUDES_DOCS =
+  /aws s3 sync web\/dist "s3:\/\/\$WEB_BUCKET_NAME" --delete --exclude index\.html --exclude "docs\/\*" --cache-control/;
+const DOCS_BUILD = /npm ci && npm run docs:site/;
+const DOCS_SYNC = /aws s3 sync docs\/site "s3:\/\/\$WEB_BUCKET_NAME\/docs" --delete/;
+const OPENAPI_COPY =
+  /aws s3 cp docs\/site\/openapi\.json "s3:\/\/\$WEB_BUCKET_NAME\/docs\/openapi\.json" --cache-control no-cache --content-type application\/json/;
+const INVALIDATION_WITH_DOCS =
+  /aws cloudfront create-invalidation --distribution-id "\$DISTRIBUTION_ID" --paths "\/\*" "\/docs\/\*"/;
 
 type Mapping = Record<string, unknown>;
 
@@ -289,6 +298,50 @@ function assertLambdaCodeUpdate(workflow: Mapping): void {
   expect(runsOf(workflow, 'deploy-api')).toMatch(LAMBDA_CODE_UPDATE);
 }
 
+function assertWebSyncExcludesDocs(workflow: Mapping): void {
+  expect(runsOf(workflow, 'deploy-web')).toMatch(WEB_SYNC_EXCLUDES_DOCS);
+}
+
+function assertDocsSiteBuild(workflow: Mapping): void {
+  const job = getJob(workflow, 'deploy-web');
+  const setup = stepsOf(job).find((step) => usesAction(step, SETUP_NODE_PREFIX));
+  expect(setup).toBeDefined();
+  expect(withOf(setup ?? {})['node-version']).toBe('22');
+  expect(String(withOf(setup ?? {})['cache-dependency-path'])).toContain('api/package-lock.json');
+
+  const build = stepsOf(job).find((step) => DOCS_BUILD.test(runOf(step)));
+  expect(build).toBeDefined();
+  expect(build?.['working-directory']).toBe('api');
+}
+
+// Upload order: docs are built, credentials are loaded, the web and docs are synced, and
+// CloudFront is invalidated last, after every upload.
+function assertDocsPublishOrder(workflow: Mapping): void {
+  const steps = stepsOf(getJob(workflow, 'deploy-web'));
+  const indexWhere = (pattern: RegExp): number =>
+    steps.findIndex((step) => pattern.test(runOf(step)));
+  const positions = [
+    indexWhere(DOCS_BUILD),
+    steps.findIndex((step) => usesAction(step, AWS_CREDENTIALS_PREFIX)),
+    indexWhere(WEB_SYNC_EXCLUDES_DOCS),
+    indexWhere(DOCS_SYNC),
+    indexWhere(OPENAPI_COPY),
+    indexWhere(INVALIDATION_WITH_DOCS),
+  ];
+  expect(positions).not.toContain(-1);
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
+}
+
+function assertDocsSyncAndOpenApiCopy(workflow: Mapping): void {
+  const runs = runsOf(workflow, 'deploy-web');
+  expect(runs).toMatch(DOCS_SYNC);
+  expect(runs).toMatch(OPENAPI_COPY);
+}
+
+function assertInvalidationCoversDocs(workflow: Mapping): void {
+  expect(runsOf(workflow, 'deploy-web')).toMatch(INVALIDATION_WITH_DOCS);
+}
+
 function parseVersion(text: string): number[] {
   const parts = text.split('.').map(Number);
   if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
@@ -448,6 +501,26 @@ const ASSERTIONS: readonly Assertion[] = [
   {
     name: 'deploy-api runs update-function-code',
     check: assertLambdaCodeUpdate,
+  },
+  {
+    name: 'web sync excludes docs/* so --delete never removes the published docs',
+    check: assertWebSyncExcludesDocs,
+  },
+  {
+    name: 'API docs are built with npm ci and npm run docs:site in api/ on Node 22',
+    check: assertDocsSiteBuild,
+  },
+  {
+    name: 'docs sync uses --delete and openapi.json is copied with no-cache and JSON content type',
+    check: assertDocsSyncAndOpenApiCopy,
+  },
+  {
+    name: 'docs are built before credentials, synced before invalidation, and invalidation runs last',
+    check: assertDocsPublishOrder,
+  },
+  {
+    name: 'CloudFront invalidation includes /docs/*',
+    check: assertInvalidationCoversDocs,
   },
   {
     name: 'setup-terraform pins an exact version allowed by required_version',
@@ -724,6 +797,63 @@ const MUTATIONS: readonly Mutation[] = [
         'update-function-code',
         'update-function-configuration',
       );
+    },
+  },
+  {
+    name: 'web sync without the docs exclusion',
+    mutate: (workflow) => {
+      replaceInRun(
+        findRawStep(workflow, 'deploy-web', 'aws s3 sync web/dist'),
+        ' --exclude "docs/*"',
+        '',
+      );
+    },
+  },
+  {
+    name: 'docs sync without --delete',
+    mutate: (workflow) => {
+      replaceInRun(
+        findRawStep(workflow, 'deploy-web', 'aws s3 sync docs/site'),
+        '/docs" --delete',
+        '/docs"',
+      );
+    },
+  },
+  {
+    name: 'openapi.json cached without no-cache',
+    mutate: (workflow) => {
+      replaceInRun(
+        findRawStep(workflow, 'deploy-web', 'docs/openapi.json'),
+        '--cache-control no-cache',
+        '--cache-control "max-age=300"',
+      );
+    },
+  },
+  {
+    name: 'invalidation without /docs/*',
+    mutate: (workflow) => {
+      replaceInRun(findRawStep(workflow, 'deploy-web', 'create-invalidation'), ' "/docs/*"', '');
+    },
+  },
+  {
+    name: 'API docs built without npm ci',
+    mutate: (workflow) => {
+      replaceInRun(findRawStep(workflow, 'deploy-web', 'npm run docs:site'), 'npm ci && ', '');
+    },
+  },
+  {
+    name: 'API docs setup on Node 20',
+    mutate: (workflow) => {
+      asMapping(findRawStep(workflow, 'deploy-web', SETUP_NODE_PREFIX).with, 'with')[
+        'node-version'
+      ] = '20';
+    },
+  },
+  {
+    name: 'docs published before the AWS credentials step',
+    mutate: (workflow) => {
+      const publish = findRawStep(workflow, 'deploy-web', 'docs/openapi.json');
+      moveStepBefore(workflow, 'deploy-web', publish, AWS_CREDENTIALS_PREFIX);
     },
   },
 ];
