@@ -11,7 +11,10 @@
     "test": "jest",
     "build": "tsx scripts/build-lambda.ts",
     "typecheck": "tsc --noEmit",
-    "depcruise": "depcruise src --config .dependency-cruiser.cjs"
+    "depcruise": "depcruise src --config .dependency-cruiser.cjs",
+    "openapi": "ts-node scripts/generate-openapi.ts",
+    "docs:site": "ts-node scripts/build-docs-site.ts",
+    "postman": "ts-node scripts/generate-postman.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -1,0 +1,1335 @@
+{
+  "components": {
+    "schemas": {
+      "AcceptanceLinkDto": {
+        "properties": {
+          "permalink": {
+            "example": "https://payment.test/docs/acceptance",
+            "type": "string"
+          },
+          "token": {
+            "example": "tok_test_fake_acceptance",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "permalink"
+        ],
+        "type": "object"
+      },
+      "AcceptanceTokensResponseDto": {
+        "properties": {
+          "acceptPersonalAuth": {
+            "$ref": "#/components/schemas/AcceptanceLinkDto"
+          },
+          "acceptanceToken": {
+            "$ref": "#/components/schemas/AcceptanceLinkDto"
+          }
+        },
+        "required": [
+          "acceptanceToken",
+          "acceptPersonalAuth"
+        ],
+        "type": "object"
+      },
+      "CreateCustomerDto": {
+        "properties": {
+          "documentNumber": {
+            "description": "Document number. CC and CE: 6 to 10 digits. NIT: 9 to 10 digits. PP: 6 to 12 letters or digits.",
+            "example": "1234567890",
+            "type": "string"
+          },
+          "documentType": {
+            "enum": [
+              "CC",
+              "CE",
+              "NIT",
+              "PP"
+            ],
+            "example": "CC",
+            "type": "string"
+          },
+          "email": {
+            "description": "Buyer email. Surrounding spaces are removed before validation.",
+            "example": "ana.perez@example.com",
+            "maxLength": 120,
+            "type": "string"
+          },
+          "fullName": {
+            "description": "Buyer full name.",
+            "example": "Ana Pérez",
+            "maxLength": 80,
+            "minLength": 3,
+            "type": "string"
+          },
+          "phone": {
+            "description": "Colombian mobile number: 10 digits starting with 3.",
+            "example": "3001234567",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fullName",
+          "email",
+          "phone",
+          "documentType",
+          "documentNumber"
+        ],
+        "type": "object"
+      },
+      "CreateTransactionDto": {
+        "properties": {
+          "acceptPersonalAuth": {
+            "description": "Personal data authorization token, from GET /acceptance-tokens.",
+            "example": "auth_test_fake",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "acceptanceToken": {
+            "description": "Acceptance token of the current terms, from GET /acceptance-tokens.",
+            "example": "acc_test_fake",
+            "maxLength": 512,
+            "type": "string"
+          },
+          "customerId": {
+            "example": "01HZX0000000000000000000CD",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/DeliveryDto"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/PaymentDto"
+          },
+          "productId": {
+            "example": "01HZX0000000000000000000AB",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "quantity": {
+            "example": 2,
+            "maximum": 5,
+            "minimum": 1,
+            "type": "number"
+          }
+        },
+        "required": [
+          "productId",
+          "quantity",
+          "customerId",
+          "delivery",
+          "payment",
+          "acceptanceToken",
+          "acceptPersonalAuth"
+        ],
+        "type": "object"
+      },
+      "CustomerResponseDto": {
+        "properties": {
+          "createdAt": {
+            "example": "2026-01-15T10:00:00.000Z",
+            "type": "string"
+          },
+          "documentNumber": {
+            "example": "1234567890",
+            "type": "string"
+          },
+          "documentType": {
+            "enum": [
+              "CC",
+              "CE",
+              "NIT",
+              "PP"
+            ],
+            "example": "CC",
+            "type": "string"
+          },
+          "email": {
+            "example": "ana.perez@example.com",
+            "type": "string"
+          },
+          "fullName": {
+            "example": "Ana Pérez",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9Z3K5M7N8P0Q2R4S6T8V0W1",
+            "type": "string"
+          },
+          "phone": {
+            "example": "3001234567",
+            "type": "string"
+          },
+          "updatedAt": {
+            "example": "2026-01-15T10:00:00.000Z",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "fullName",
+          "phone",
+          "documentType",
+          "documentNumber",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "DeliveryDto": {
+        "properties": {
+          "addressLine1": {
+            "example": "Calle 1 # 2-3",
+            "maxLength": 120,
+            "minLength": 5,
+            "type": "string"
+          },
+          "addressLine2": {
+            "example": "Apto 401",
+            "maxLength": 60,
+            "type": "string"
+          },
+          "city": {
+            "example": "Bogotá",
+            "maxLength": 60,
+            "minLength": 2,
+            "type": "string"
+          },
+          "department": {
+            "enum": [
+              "Amazonas",
+              "Antioquia",
+              "Arauca",
+              "Atlántico",
+              "Bolívar",
+              "Boyacá",
+              "Caldas",
+              "Caquetá",
+              "Casanare",
+              "Cauca",
+              "Cesar",
+              "Chocó",
+              "Córdoba",
+              "Cundinamarca",
+              "Guainía",
+              "Guaviare",
+              "Huila",
+              "La Guajira",
+              "Magdalena",
+              "Meta",
+              "Nariño",
+              "Norte de Santander",
+              "Putumayo",
+              "Quindío",
+              "Risaralda",
+              "San Andrés y Providencia",
+              "Santander",
+              "Sucre",
+              "Tolima",
+              "Valle del Cauca",
+              "Vaupés",
+              "Vichada",
+              "Bogotá D.C."
+            ],
+            "example": "Bogotá D.C.",
+            "type": "string"
+          },
+          "phone": {
+            "description": "Colombian mobile number: 10 digits starting with 3.",
+            "example": "3001234567",
+            "type": "string"
+          },
+          "postalCode": {
+            "description": "6 digits.",
+            "example": "110111",
+            "type": "string"
+          },
+          "recipientName": {
+            "example": "Ana Pérez",
+            "maxLength": 80,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "recipientName",
+          "phone",
+          "addressLine1",
+          "city",
+          "department"
+        ],
+        "type": "object"
+      },
+      "DeliveryResponseDto": {
+        "properties": {
+          "addressLine1": {
+            "example": "Calle 1 # 2-3",
+            "type": "string"
+          },
+          "addressLine2": {
+            "example": "Apto 401",
+            "type": "string"
+          },
+          "city": {
+            "example": "Bogotá",
+            "type": "string"
+          },
+          "createdAt": {
+            "example": "2026-05-01T10:00:00.000Z",
+            "type": "string"
+          },
+          "department": {
+            "example": "Bogotá D.C.",
+            "type": "string"
+          },
+          "id": {
+            "example": "01HZX0000000000000000000JN",
+            "type": "string"
+          },
+          "phone": {
+            "example": "3001234567",
+            "type": "string"
+          },
+          "postalCode": {
+            "example": "110111",
+            "type": "string"
+          },
+          "productId": {
+            "example": "01HZX0000000000000000000KM",
+            "type": "string"
+          },
+          "quantity": {
+            "example": 2,
+            "type": "number"
+          },
+          "recipientName": {
+            "example": "Ana Perez",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "ASSIGNED",
+              "BACKORDER",
+              "CANCELLED"
+            ],
+            "example": "PENDING",
+            "type": "string"
+          },
+          "transactionId": {
+            "example": "01HZX0000000000000000000EF",
+            "type": "string"
+          },
+          "updatedAt": {
+            "example": "2026-05-01T10:00:00.000Z",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "transactionId",
+          "productId",
+          "quantity",
+          "recipientName",
+          "phone",
+          "addressLine1",
+          "city",
+          "department",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "properties": {
+          "code": {
+            "enum": [
+              "VALIDATION_ERROR",
+              "MISSING_IDEMPOTENCY_KEY",
+              "INVALID_SIGNATURE",
+              "FORBIDDEN_ORIGIN",
+              "PRODUCT_NOT_FOUND",
+              "CUSTOMER_NOT_FOUND",
+              "TRANSACTION_NOT_FOUND",
+              "DELIVERY_NOT_FOUND",
+              "ROUTE_NOT_FOUND",
+              "INSUFFICIENT_STOCK",
+              "IDEMPOTENCY_KEY_IN_PROGRESS",
+              "PAYLOAD_TOO_LARGE",
+              "UNSUPPORTED_MEDIA_TYPE",
+              "IDEMPOTENCY_KEY_REUSED",
+              "TOO_MANY_REQUESTS",
+              "INTERNAL_ERROR",
+              "PAYMENT_PROVIDER_ERROR"
+            ],
+            "example": "PRODUCT_NOT_FOUND",
+            "type": "string"
+          },
+          "details": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "message": {
+            "example": "Product not found.",
+            "type": "string"
+          },
+          "statusCode": {
+            "example": 404,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "statusCode",
+          "code",
+          "message",
+          "details"
+        ],
+        "type": "object",
+        "x-error-codes": {
+          "CUSTOMER_NOT_FOUND": {
+            "message": "Customer not found.",
+            "status": 404
+          },
+          "DELIVERY_NOT_FOUND": {
+            "message": "Delivery not found.",
+            "status": 404
+          },
+          "FORBIDDEN_ORIGIN": {
+            "message": "Origin not allowed.",
+            "status": 403
+          },
+          "IDEMPOTENCY_KEY_IN_PROGRESS": {
+            "message": "A request with this Idempotency-Key is still in progress.",
+            "status": 409
+          },
+          "IDEMPOTENCY_KEY_REUSED": {
+            "message": "The Idempotency-Key was already used with a different request body.",
+            "status": 422
+          },
+          "INSUFFICIENT_STOCK": {
+            "message": "Not enough stock for the requested quantity.",
+            "status": 409
+          },
+          "INTERNAL_ERROR": {
+            "message": "Internal server error.",
+            "status": 500
+          },
+          "INVALID_SIGNATURE": {
+            "message": "Invalid signature.",
+            "status": 401
+          },
+          "MISSING_IDEMPOTENCY_KEY": {
+            "message": "The Idempotency-Key header is required.",
+            "status": 400
+          },
+          "PAYLOAD_TOO_LARGE": {
+            "message": "Request body too large.",
+            "status": 413
+          },
+          "PAYMENT_PROVIDER_ERROR": {
+            "message": "The payment provider could not process the request.",
+            "status": 502
+          },
+          "PRODUCT_NOT_FOUND": {
+            "message": "Product not found.",
+            "status": 404
+          },
+          "ROUTE_NOT_FOUND": {
+            "message": "Route not found.",
+            "status": 404
+          },
+          "TOO_MANY_REQUESTS": {
+            "message": "Too many requests.",
+            "status": 429
+          },
+          "TRANSACTION_NOT_FOUND": {
+            "message": "Transaction not found.",
+            "status": 404
+          },
+          "UNSUPPORTED_MEDIA_TYPE": {
+            "message": "Unsupported media type. Use application/json.",
+            "status": 415
+          },
+          "VALIDATION_ERROR": {
+            "message": "Request validation failed.",
+            "status": 400
+          }
+        }
+      },
+      "FeesResponseDto": {
+        "properties": {
+          "baseFeeInCents": {
+            "description": "Base fee in cents.",
+            "example": 300000,
+            "type": "number"
+          },
+          "currency": {
+            "example": "COP",
+            "type": "string"
+          },
+          "deliveryFeeInCents": {
+            "description": "Delivery fee in cents.",
+            "example": 800000,
+            "type": "number"
+          }
+        },
+        "required": [
+          "currency",
+          "baseFeeInCents",
+          "deliveryFeeInCents"
+        ],
+        "type": "object"
+      },
+      "PaymentDto": {
+        "properties": {
+          "brand": {
+            "enum": [
+              "VISA",
+              "MASTERCARD"
+            ],
+            "example": "VISA",
+            "type": "string"
+          },
+          "cardToken": {
+            "description": "Token issued by the payment provider. Sent to the provider only, never stored.",
+            "example": "tok_test_fake",
+            "type": "string"
+          },
+          "installments": {
+            "example": 1,
+            "maximum": 36,
+            "minimum": 1,
+            "type": "number"
+          },
+          "lastFour": {
+            "description": "Last four digits of the card.",
+            "example": "4242",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cardToken",
+          "installments",
+          "brand",
+          "lastFour"
+        ],
+        "type": "object"
+      },
+      "ProductResponseDto": {
+        "properties": {
+          "currency": {
+            "example": "COP",
+            "type": "string"
+          },
+          "description": {
+            "example": "Auriculares con cancelación de ruido y 30 horas de batería.",
+            "type": "string"
+          },
+          "id": {
+            "example": "01J9Z3K5M7N8P0Q2R4S6T8V0W1",
+            "type": "string"
+          },
+          "imageUrl": {
+            "example": "/images/auriculares.webp",
+            "type": "string"
+          },
+          "name": {
+            "example": "Auriculares inalámbricos",
+            "type": "string"
+          },
+          "priceInCents": {
+            "description": "Integer amount in cents of the currency.",
+            "example": 12000000,
+            "type": "number"
+          },
+          "sku": {
+            "example": "SKU-0001",
+            "type": "string"
+          },
+          "stock": {
+            "example": 5,
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "sku",
+          "name",
+          "description",
+          "imageUrl",
+          "priceInCents",
+          "currency",
+          "stock"
+        ],
+        "type": "object"
+      },
+      "TransactionAmountsDto": {
+        "properties": {
+          "baseFeeInCents": {
+            "example": 300000,
+            "type": "number"
+          },
+          "currency": {
+            "example": "COP",
+            "type": "string"
+          },
+          "deliveryFeeInCents": {
+            "example": 800000,
+            "type": "number"
+          },
+          "subtotalInCents": {
+            "example": 24000000,
+            "type": "number"
+          },
+          "totalInCents": {
+            "example": 25100000,
+            "type": "number"
+          }
+        },
+        "required": [
+          "currency",
+          "subtotalInCents",
+          "baseFeeInCents",
+          "deliveryFeeInCents",
+          "totalInCents"
+        ],
+        "type": "object"
+      },
+      "TransactionCardDto": {
+        "properties": {
+          "brand": {
+            "enum": [
+              "VISA",
+              "MASTERCARD"
+            ],
+            "example": "VISA",
+            "type": "string"
+          },
+          "lastFour": {
+            "example": "4242",
+            "type": "string"
+          }
+        },
+        "required": [
+          "brand",
+          "lastFour"
+        ],
+        "type": "object"
+      },
+      "TransactionDetailResponseDto": {
+        "properties": {
+          "amounts": {
+            "$ref": "#/components/schemas/TransactionAmountsDto"
+          },
+          "card": {
+            "$ref": "#/components/schemas/TransactionCardDto"
+          },
+          "createdAt": {
+            "example": "2026-05-01T10:00:00.000Z",
+            "type": "string"
+          },
+          "deliveryId": {
+            "example": "01HZX0000000000000000000JN",
+            "type": "string"
+          },
+          "finalizedAt": {
+            "example": "2026-05-01T10:00:02.000Z",
+            "type": "string"
+          },
+          "id": {
+            "example": "01HZX0000000000000000000EF",
+            "type": "string"
+          },
+          "installments": {
+            "example": 3,
+            "type": "number"
+          },
+          "productId": {
+            "example": "01HZX0000000000000000000KM",
+            "type": "string"
+          },
+          "quantity": {
+            "example": 2,
+            "type": "number"
+          },
+          "reference": {
+            "example": "ORD-01HZX0000000000000000000GH",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "DECLINED",
+              "VOIDED",
+              "ERROR"
+            ],
+            "example": "PENDING",
+            "type": "string"
+          },
+          "statusReason": {
+            "description": "Only for final statuses that carry a reason.",
+            "example": "Fondos insuficientes",
+            "type": "string"
+          },
+          "updatedAt": {
+            "example": "2026-05-01T10:00:02.000Z",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "status",
+          "amounts",
+          "deliveryId",
+          "card",
+          "productId",
+          "quantity",
+          "installments",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "TransactionResponseDto": {
+        "properties": {
+          "amounts": {
+            "$ref": "#/components/schemas/TransactionAmountsDto"
+          },
+          "card": {
+            "$ref": "#/components/schemas/TransactionCardDto"
+          },
+          "createdAt": {
+            "example": "2026-05-01T10:00:00.000Z",
+            "type": "string"
+          },
+          "deliveryId": {
+            "example": "01HZX0000000000000000000IJ",
+            "type": "string"
+          },
+          "id": {
+            "example": "01HZX0000000000000000000EF",
+            "type": "string"
+          },
+          "reference": {
+            "example": "ORD-01HZX0000000000000000000GH",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "DECLINED",
+              "VOIDED",
+              "ERROR"
+            ],
+            "example": "PENDING",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reference",
+          "status",
+          "amounts",
+          "deliveryId",
+          "card",
+          "createdAt"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "Products, customers, transactions and deliveries for the card checkout store.",
+    "title": "Card checkout API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1/acceptance-tokens": {
+      "get": {
+        "operationId": "AcceptanceTokensController_detail",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptanceTokensResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN_ORIGIN"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TOO_MANY_REQUESTS"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "PAYMENT_PROVIDER_ERROR"
+          }
+        },
+        "tags": [
+          "acceptance-tokens"
+        ]
+      }
+    },
+    "/api/v1/customers": {
+      "post": {
+        "operationId": "CustomersController_upsert",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomerDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerResponseDto"
+                }
+              }
+            },
+            "description": "Existing customer updated."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerResponseDto"
+                }
+              }
+            },
+            "description": "Customer created."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN_ORIGIN"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNSUPPORTED_MEDIA_TYPE"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TOO_MANY_REQUESTS"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "tags": [
+          "customers"
+        ]
+      }
+    },
+    "/api/v1/customers/{id}": {
+      "get": {
+        "operationId": "CustomersController_detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "FORBIDDEN_ORIGIN"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "CUSTOMER_NOT_FOUND"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TOO_MANY_REQUESTS"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "INTERNAL_ERROR"
+          }
+        },
+        "tags": [
+          "customers"
+        ]
+      }
+    },
+    "/api/v1/deliveries/{id}": {
+      "get": {
+        "operationId": "DeliveriesController_detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "DELIVERY_NOT_FOUND"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TOO_MANY_REQUESTS"
+          }
+        },
+        "tags": [
+          "deliveries"
+        ]
+      }
+    },
+    "/api/v1/fees": {
+      "get": {
+        "operationId": "FeesController_fees",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeesResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TOO_MANY_REQUESTS"
+          }
+        },
+        "tags": [
+          "fees"
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "operationId": "HealthController_check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/api/v1/products": {
+      "get": {
+        "operationId": "ProductsController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProductResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TOO_MANY_REQUESTS"
+          }
+        },
+        "tags": [
+          "products"
+        ]
+      }
+    },
+    "/api/v1/products/{id}": {
+      "get": {
+        "operationId": "ProductsController_detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "PRODUCT_NOT_FOUND"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TOO_MANY_REQUESTS"
+          }
+        },
+        "tags": [
+          "products"
+        ]
+      }
+    },
+    "/api/v1/transactions": {
+      "post": {
+        "operationId": "TransactionsController_create",
+        "parameters": [
+          {
+            "description": "8 to 128 characters from letters, digits, \".\", \"_\" and \"-\".",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTransactionDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponseDto"
+                }
+              }
+            },
+            "description": "Idempotent replay of a finished request, or current state of a stale attempt."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponseDto"
+                }
+              }
+            },
+            "description": "Transaction created."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "VALIDATION_ERROR or MISSING_IDEMPOTENCY_KEY"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "PRODUCT_NOT_FOUND or CUSTOMER_NOT_FOUND"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "INSUFFICIENT_STOCK or IDEMPOTENCY_KEY_IN_PROGRESS"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "UNSUPPORTED_MEDIA_TYPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "IDEMPOTENCY_KEY_REUSED"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TOO_MANY_REQUESTS"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "PAYMENT_PROVIDER_ERROR. The payment provider rejected the request."
+          }
+        },
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/api/v1/transactions/{id}": {
+      "get": {
+        "operationId": "TransactionsController_detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionDetailResponseDto"
+                }
+              }
+            },
+            "description": "Current state of the Transaction."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TRANSACTION_NOT_FOUND"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "TOO_MANY_REQUESTS"
+          }
+        },
+        "tags": [
+          "transactions"
+        ]
+      }
+    }
+  },
+  "servers": [],
+  "tags": []
+}
