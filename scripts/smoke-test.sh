@@ -5,7 +5,7 @@
 # and, for health, the body {"status":"ok"}. Requests never send
 # X-Origin-Verify, so a passing run proves that CloudFront adds it.
 #
-# Usage: scripts/smoke-test.sh <base-url>
+# Usage: scripts/smoke-test.sh <base-url>   (the URL must start with https://)
 # Environment: SMOKE_RETRY_DELAY seconds between attempts (default 5).
 set -euo pipefail
 
@@ -33,6 +33,11 @@ if [ "$#" -ne 1 ] || [ -z "$1" ]; then
   exit 2
 fi
 
+if [[ "$1" != https://* ]]; then
+  echo "The base URL must start with https://" >&2
+  usage
+  exit 2
+fi
 readonly BASE_URL="${1%/}"
 readonly RETRY_DELAY="${SMOKE_RETRY_DELAY:-5}"
 
@@ -95,7 +100,7 @@ run_check() {
     : >"$HEADERS_FILE"
     : >"$BODY_FILE"
 
-    if curl -sS --max-time 30 -D "$HEADERS_FILE" -o "$BODY_FILE" "${BASE_URL}${path}"; then
+    if curl -sS --proto '=https' --max-time 30 -D "$HEADERS_FILE" -o "$BODY_FILE" "${BASE_URL}${path}"; then
       if validate_response "$check_health"; then
         echo "OK: $name"
         return 0

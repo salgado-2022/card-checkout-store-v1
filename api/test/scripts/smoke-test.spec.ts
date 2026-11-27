@@ -1,6 +1,7 @@
-import { spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as http from 'http';
+import * as https from 'https';
 import type { AddressInfo } from 'net';
 import * as os from 'os';
 import * as path from 'path';
@@ -66,7 +67,9 @@ let currentPlan: Plan = { root: [], health: [] };
 let received: Record<string, number> = {};
 let originVerifySeen = false;
 let baseUrl = '';
-let server: http.Server;
+let server: https.Server;
+let certDir = '';
+let caCertPath = '';
 
 /** Mirrors the script rule: the last attempt index is repeated when the list is exhausted. */
 function responseAt(responses: FakeResponse[], attempt: number): FakeResponse {
@@ -144,7 +147,14 @@ function runScript(
   return new Promise((resolve, reject) => {
     const child = spawn('bash', [SCRIPT_PATH, ...args], {
       cwd: options.cwd,
-      env: { ...process.env, SMOKE_RETRY_DELAY: '0', TMPDIR: options.cwd, ...options.env },
+      env: {
+        ...process.env,
+        SMOKE_RETRY_DELAY: '0',
+        TMPDIR: options.cwd,
+        // The local server presents a throwaway self-signed certificate that curl must trust.
+        CURL_CA_BUNDLE: caCertPath,
+        ...options.env,
+      },
     });
     let stdout = '';
     let stderr = '';
@@ -253,21 +263,54 @@ const planArb: fc.Arbitrary<Plan> = fc.record({
   health: fc.array(responseArb, { minLength: 1, maxLength: 6 }),
 });
 
+/** Creates a throwaway self-signed certificate for 127.0.0.1 and returns the PEM contents. */
+function createLocalCertificate(): { key: string; cert: string; certPath: string } {
+  certDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-test-cert-'));
+  const keyPath = path.join(certDir, 'server.key');
+  const certPath = path.join(certDir, 'server.crt');
+  execFileSync(
+    'openssl',
+    [
+      'req',
+      '-x509',
+      '-newkey',
+      'rsa:2048',
+      '-nodes',
+      '-keyout',
+      keyPath,
+      '-out',
+      certPath,
+      '-days',
+      '1',
+      '-subj',
+      '/CN=127.0.0.1',
+      '-addext',
+      'subjectAltName=IP:127.0.0.1',
+    ],
+    { stdio: 'ignore' },
+  );
+  return {
+    key: fs.readFileSync(keyPath, 'utf8'),
+    cert: fs.readFileSync(certPath, 'utf8'),
+    certPath,
+  };
+}
 describe('scripts/smoke-test.sh', () => {
   beforeAll(async () => {
-    server = http.createServer(handleRequest);
+    const { key, cert, certPath } = createLocalCertificate();
+    caCertPath = certPath;
+    server = https.createServer({ key, cert }, handleRequest);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const { port } = server.address() as AddressInfo;
-    baseUrl = `http://127.0.0.1:${port}`;
+    baseUrl = `https://127.0.0.1:${port}`;
   });
-
   afterAll(async () => {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
+    fs.rmSync(certDir, { recursive: true, force: true });
   });
-
   it('Property 16: smoke test passes if and only if status, headers and body are all correct', async () => {
     await fc.assert(
       fc.asyncProperty(planArb, async (plan) => {
@@ -327,6 +370,86 @@ describe('scripts/smoke-test.sh', () => {
     expect(run.requests).toEqual({ [ROOT.path]: 1, [HEALTH.path]: MAX_ATTEMPTS });
   });
 
+  describe('https-only', () => {
+    const plainHttpUrl = (): string => baseUrl.replace('https://', 'http://');
+    const rejectedUrls: ReadonlyArray<[string, () => string]> = [
+      ['plain http', plainHttpUrl],
+      ['ftp', () => 'ftp://127.0.0.1/'],
+      ['file', () => 'file:///etc/hosts'],
+      ['no scheme', () => '127.0.0.1:8443'],
+      ['upper-case scheme', () => 'HTTPS://127.0.0.1'],
+      ['leading space', () => ' https://127.0.0.1'],
+    ];
+    it.each(rejectedUrls)(
+      'rejects a base URL with %s and sends no request',
+      async (_label, url) => {
+        currentPlan = { root: [successfulResponse], health: [successfulResponse] };
+        received = {};
+        const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-test-scheme-'));
+        try {
+          const run = await runScript([url()], { cwd: workDir });
+          expect(run.exitCode).toBe(2);
+          expect(run.stderr).toContain('must start with https://');
+          expect(run.stdout).not.toContain('OK:');
+          expect(received).toEqual({});
+        } finally {
+          fs.rmSync(workDir, { recursive: true, force: true });
+        }
+      },
+    );
+    it('accepts an https base URL with a trailing slash', async () => {
+      currentPlan = { root: [successfulResponse], health: [successfulResponse] };
+      received = {};
+      const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-test-slash-'));
+      try {
+        const run = await runScript([`${baseUrl}/`], { cwd: workDir });
+        expect(run.exitCode).toBe(0);
+      } finally {
+        fs.rmSync(workDir, { recursive: true, force: true });
+      }
+    });
+    it('restricts every curl call to https with --proto', () => {
+      const script = fs.readFileSync(SCRIPT_PATH, 'utf8');
+      const curlCalls = script
+        .split('\n')
+        .filter((line) => /\bcurl\s/.test(line) && !/^\s*#/.test(line));
+      expect(curlCalls.length).toBeGreaterThan(0);
+      for (const call of curlCalls) {
+        expect(call).toContain("--proto '=https'");
+      }
+    });
+    it('detects a script copy whose scheme check was removed', async () => {
+      const original = fs.readFileSync(SCRIPT_PATH, 'utf8');
+      const mutated = original.replace('if [[ "$1" != https://* ]]; then', 'if false; then');
+      expect(mutated).not.toEqual(original);
+      const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-test-mutant-'));
+      try {
+        const mutantPath = path.join(workDir, 'mutant.sh');
+        fs.writeFileSync(mutantPath, mutated);
+        currentPlan = { root: [successfulResponse], health: [successfulResponse] };
+        received = {};
+        const run = await new Promise<ScriptResult>((resolve, reject) => {
+          const child = spawn('bash', [mutantPath, plainHttpUrl()], {
+            cwd: workDir,
+            env: { ...process.env, SMOKE_RETRY_DELAY: '0', TMPDIR: workDir },
+          });
+          let stderr = '';
+          child.stderr.on('data', (chunk: Buffer) => {
+            stderr += chunk.toString();
+          });
+          child.on('error', reject);
+          child.on('close', (exitCode) => resolve({ exitCode, stdout: '', stderr }));
+        });
+        // Without the scheme check the script does not exit with the https-only error.
+        expect(run.stderr).not.toContain('must start with https://');
+        expect(run.exitCode).not.toBe(0);
+        // The remaining --proto guard still stops curl before any plain-HTTP request is sent.
+        expect(received).toEqual({});
+      } finally {
+        fs.rmSync(workDir, { recursive: true, force: true });
+      }
+    });
+  });
   it('prints usage and exits non-zero without an argument', async () => {
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-test-usage-'));
     try {
