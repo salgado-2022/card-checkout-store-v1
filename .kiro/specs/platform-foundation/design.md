@@ -119,7 +119,7 @@ Developer (before 1st deploy)  -> creates 3 payment secrets in SSM with the AWS 
     .nvmrc
   infra/
     main.tf
-    providers.tf                     AWS provider (us-east-1), random provider, partial `backend "s3"` block (no bucket name)
+    providers.tf                     AWS provider (us-east-2), random provider, partial `backend "s3"` block (no bucket name)
     variables.tf                     budget_notification_email, payment_api_url, payment_public_key, project_name, placeholder settings
     outputs.tf                       distribution_domain_name, distribution_id, web_bucket_name, lambda_function_name
     s3.tf                            Web_Bucket + bucket policy restricted to the Distribution via OAC
@@ -293,7 +293,7 @@ All resources live under a flat root module in `infra/` (no nested module direct
 
 | File | Resources | Key settings (fixed, not alternatives) |
 |---|---|---|
-| `providers.tf` | `terraform { backend "s3" { key, region, use_lockfile = true, encrypt = true } }`, `provider "aws"`, `provider "random"` | `region = "us-east-1"`; the bucket name is not in the code: it is passed as `-backend-config="bucket=..."` (together with key and region) from the workflow variables; no DynamoDB lock table |
+| `providers.tf` | `terraform { backend "s3" { key, region, use_lockfile = true, encrypt = true } }`, `provider "aws"`, `provider "random"` | `region = "us-east-2"`; the bucket name is not in the code: it is passed as `-backend-config="bucket=..."` (together with key and region) from the workflow variables; no DynamoDB lock table |
 | `s3.tf` | `aws_s3_bucket.web`, `aws_s3_bucket_public_access_block.web`, `aws_s3_bucket_policy.web` | All public access blocked; bucket policy allows `s3:GetObject` only for the CloudFront distribution's OAC service principal, scoped by `AWS:SourceArn` to the distribution |
 | `cloudfront.tf` | `aws_cloudfront_distribution.web`, `aws_cloudfront_origin_access_control.web`, `aws_cloudfront_response_headers_policy.security` | Default behavior → S3 origin with OAC; `/api/*` ordered cache behavior → Lambda Function URL origin, `cache_policy_id` = CachingDisabled managed policy, custom origin header `X-Origin-Verify`; `viewer_protocol_policy = "redirect-to-https"`; default `*.cloudfront.net` certificate (`cloudfront_default_certificate = true`); no `custom_error_response` blocks |
 | `cloudfront_function.tf` | `aws_cloudfront_function.spa_rewrite` | JS function associated to the default (S3) behavior's `viewer-request` event; rewrites extension-less, non-`/api/*` URIs to `/index.html` |
@@ -476,7 +476,7 @@ The module has no `backend` block, so its state is a local `terraform.tfstate` t
 | `aws_s3_bucket_versioning.state` | `Enabled` |
 | `aws_s3_bucket_server_side_encryption_configuration.state` | `AES256` |
 | `aws_s3_bucket_public_access_block.state` | all four settings `true` |
-| `aws_iam_openid_connect_provider.github` | `url = "https://token.actions.githubusercontent.com"`, `client_id_list = ["sts.amazonaws.com"]` |
+| `local.github_oidc_provider_arn` (no resource, no data source) | `arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`; the provider was created by the Developer outside Terraform (audience `sts.amazonaws.com`) |
 | `aws_iam_role.deploy` | trust policy below, `max_session_duration = 3600` |
 | `aws_iam_role_policy.deploy` | least-privilege policy below |
 
@@ -491,7 +491,7 @@ data "aws_iam_policy_document" "deploy_trust" {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     principals {
       type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
+      identifiers = [local.github_oidc_provider_arn]
     }
     condition {
       test     = "StringEquals"
@@ -521,11 +521,11 @@ One statement per service, each scoped to resources named with the `project_name
 | S3 state | `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` (lock file), `s3:ListBucket`, `s3:GetBucketVersioning` | State_Bucket and `State_Bucket/*` only |
 | S3 web | bucket management and object read/write actions that the `aws_s3_bucket*` resources and `s3 sync` use | `arn:aws:s3:::<project_name>-web*` and its objects |
 | CloudFront | distribution, OAC, response headers policy and function management, `CreateInvalidation` | `*` (CloudFront does not support name-scoped ARNs for creation) |
-| Lambda | function, Function URL, permission management, `UpdateFunctionCode`, `GetFunction` | `arn:aws:lambda:us-east-1:<account>:function:<project_name>-*` |
-| DynamoDB | table, GSI, TTL and tagging management | `arn:aws:dynamodb:us-east-1:<account>:table/<project_name>-*` and `/index/*` |
-| SSM | `PutParameter`, `GetParameter(s)`, `DeleteParameter`, `AddTagsToResource`, `ListTagsForResource`; `DescribeParameters` on `*` | `arn:aws:ssm:us-east-1:<account>:parameter/<project_name>/origin/*` only; no action on `/<project_name>/payment/*` (Requirement 20.5a) |
+| Lambda | function, Function URL, permission management, `UpdateFunctionCode`, `GetFunction` | `arn:aws:lambda:us-east-2:<account>:function:<project_name>-*` |
+| DynamoDB | table, GSI, TTL and tagging management | `arn:aws:dynamodb:us-east-2:<account>:table/<project_name>-*` and `/index/*` |
+| SSM | `PutParameter`, `GetParameter(s)`, `DeleteParameter`, `AddTagsToResource`, `ListTagsForResource`; `DescribeParameters` on `*` | `arn:aws:ssm:us-east-2:<account>:parameter/<project_name>/origin/*` only; no action on `/<project_name>/payment/*` (Requirement 20.5a) |
 | IAM | `GetRole`, `UpdateRole`, `UpdateAssumeRolePolicy`, `DeleteRole`, `TagRole`, `UntagRole`, `GetRolePolicy`, `ListRolePolicies`, `ListAttachedRolePolicies`, `ListInstanceProfilesForRole` on the Lambda role; `CreateRole`, `PutRolePolicy`, `DeleteRolePolicy`, `PutRolePermissionsBoundary` only when `iam:PermissionsBoundary` equals the `<project_name>-lambda-boundary` policy created by `infra/bootstrap`; `iam:DeleteRolePermissionsBoundary` is denied on `role/*`; `iam:PassRole` with condition `iam:PassedToService = lambda.amazonaws.com` | `arn:aws:iam::<account>:role/<project_name>-lambda-exec` only. No `AttachRolePolicy` or `DetachRolePolicy`, and no action on `policy/*` |
-| CloudWatch Logs | log group create/delete/describe, `PutRetentionPolicy`, tagging | `arn:aws:logs:us-east-1:<account>:log-group:/aws/lambda/<project_name>-*` (and `logs:DescribeLogGroups` on `*`) |
+| CloudWatch Logs | log group create/delete/describe, `PutRetentionPolicy`, tagging | `arn:aws:logs:us-east-2:<account>:log-group:/aws/lambda/<project_name>-*` (and `logs:DescribeLogGroups` on `*`) |
 | Budgets | `budgets:ViewBudget`, `budgets:ModifyBudget`, `budgets:TagResource` | the project budget ARN |
 
 There is no `iam:*`, no `iam:CreateUser`, no `iam:CreateAccessKey`, no `*:*`, and no permission on the OIDC provider or on the Deploy_Role itself. The Bootstrap_Module resources are reachable only through the State_Bucket statement.
@@ -688,7 +688,7 @@ A bash script that takes the base URL. For each of `/` and `/api/v1/health` it r
 | Variable | Scope | Source |
 |---|---|---|
 | `AWS_ROLE_ARN` | repository (the `plan` job has no environment and must read it) | Bootstrap output `deploy_role_arn` |
-| `AWS_REGION` | repository | `us-east-1` |
+| `AWS_REGION` | repository | `us-east-2` |
 | `TF_STATE_BUCKET` | repository | Bootstrap output `state_bucket_name` |
 | `BUDGET_NOTIFICATION_EMAIL` | repository | Developer email |
 | `PAYMENT_API_URL` | repository | payment sandbox base URL (public value) |

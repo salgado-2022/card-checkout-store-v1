@@ -213,8 +213,8 @@ Decisions fixed for this spec:
 
 #### Acceptance Criteria
 
-1. THE Infra_Code SHALL define all resources in `infra/` using Terraform, with the AWS provider region set to `us-east-1`.
-2. THE Infra_Code SHALL configure the Terraform `s3` backend in `us-east-1` with `use_lockfile` enabled, encryption enabled, and the State_Bucket as the target, and SHALL NOT define a DynamoDB lock table.
+1. THE Infra_Code SHALL define all resources in `infra/` using Terraform, with the AWS provider region set to `us-east-2`.
+2. THE Infra_Code SHALL configure the Terraform `s3` backend in `us-east-2` with `use_lockfile` enabled, encryption enabled, and the State_Bucket as the target, and SHALL NOT define a DynamoDB lock table.
 2a. THE `.gitignore` SHALL exclude `*.tfstate`, `*.tfstate.*` and `.terraform/`, including the local state of the Bootstrap_Module.
 3. THE Infra_Code SHALL define the Web_Bucket as a private S3 bucket with all public access blocked and access granted only to the Distribution through OAC.
 4. THE Infra_Code SHALL define one Distribution whose default behavior serves the Web_Bucket and whose `/api/*` behavior forwards to the Lambda Function URL with caching disabled.
@@ -316,9 +316,9 @@ Decisions fixed for this spec:
 
 #### Acceptance Criteria
 
-1. THE Monorepo SHALL contain the Bootstrap_Module in `infra/bootstrap`, using local Terraform state with the AWS provider region set to `us-east-1`.
+1. THE Monorepo SHALL contain the Bootstrap_Module in `infra/bootstrap`, using local Terraform state with the AWS provider region set to `us-east-2`.
 2. THE Bootstrap_Module SHALL create the State_Bucket with versioning enabled, server-side encryption enabled and all four S3 public access block settings enabled.
-3. THE Bootstrap_Module SHALL create the GitHub_OIDC_Provider for the issuer `https://token.actions.githubusercontent.com` with the audience `sts.amazonaws.com`.
+3. THE Bootstrap_Module SHALL NOT create the GitHub_OIDC_Provider: it already exists in the account (created by the Developer). THE Bootstrap_Module SHALL reference it by its ARN `arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`, built from the caller account id, without reading or managing it.
 4. THE Bootstrap_Module SHALL create the Deploy_Role described in Requirement 20.
 5. THE Bootstrap_Module SHALL accept the GitHub repository owner and name, and the State_Bucket name, as Terraform variables.
 6. THE Bootstrap_Module SHALL output the Deploy_Role ARN and the State_Bucket name.

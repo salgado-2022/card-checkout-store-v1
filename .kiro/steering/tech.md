@@ -12,9 +12,14 @@ Everything is **TypeScript** (`strict: true`), **Node.js 22 LTS** locally, in CI
 | Result type | `neverthrow` (`Result`, `ResultAsync`) | `throw` for business errors |
 | Tests | **Jest only** (`ts-jest` or `@swc/jest`), React Testing Library + user-event, msw, supertest, `aws-sdk-client-mock`, nock | Vitest, Mocha |
 | Data | DynamoDB **provisioned** capacity (free tier), AWS SDK v3 | On-demand mode, RDS |
-| Infra | Terraform in `infra/`, `us-east-1`, CloudFront + S3 (OAC) + CloudFront Function (SPA rewrite) + Lambda Function URL + SSM SecureString + CloudWatch Logs (7 days) | API Gateway, VPC, NAT, RDS, Secrets Manager, WAF, Route 53, load balancers |
+| Infra | Terraform in `infra/`, `us-east-2`, CloudFront + S3 (OAC) + CloudFront Function (SPA rewrite) + Lambda Function URL + SSM SecureString + CloudWatch Logs (7 days) | API Gateway, VPC, NAT, RDS, Secrets Manager, WAF, Route 53, load balancers |
 | CI | GitHub Actions: lint, typecheck, tests with coverage threshold, build, gitleaks | — |
 | Lint | ESLint v10 **flat config** (`eslint.config.mjs`, never `.eslintrc*`) + typescript-eslint v8 + Prettier; `dependency-cruiser` rule: `api/src/domain` imports nothing from NestJS, AWS SDK or HTTP libs | — |
+
+## AWS account constraints (project account, managed SCPs — cannot be changed)
+- **Region `us-east-2` (Ohio) for every regional resource** (Lambda, DynamoDB, SSM, S3, CloudWatch Logs, Terraform backend). `us-east-1` is denied for regional services; it is only reached by global services (IAM, CloudFront, Budgets, STS) through their own endpoints.
+- No multi-Region features: no Lambda@Edge, no ACM certificates in `us-east-1`, no cross-Region replication.
+- The GitHub OIDC provider already exists (`arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`). Never create, import or read it in Terraform; build its ARN from the account id.
 
 ## Commands (run inside `api/` or `web/`)
 - `npm run lint` · `npx tsc --noEmit` · `npm test -- --coverage`
