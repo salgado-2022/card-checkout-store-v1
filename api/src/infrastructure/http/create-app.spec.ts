@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import nock from 'nock';
 import { err, ok } from 'neverthrow';
 import request from 'supertest';
 import type { AppConfig } from '../config/env.config';
@@ -360,5 +361,77 @@ describe('createApp', () => {
     } finally {
       await defaultApp.close();
     }
+  });
+});
+
+describe('createApp acceptance tokens wiring', () => {
+  const PROVIDER_ORIGIN = 'https://payment.example.test';
+  const MERCHANT_PATH = '/v1/merchants/pub_test_fake';
+  const providerBody = {
+    data: {
+      presigned_acceptance: {
+        acceptance_token: 'tok_test_fake_acceptance',
+        permalink: 'https://payment.test/docs/a',
+      },
+      presigned_personal_data_auth: {
+        acceptance_token: 'tok_test_fake_personal',
+        permalink: 'https://payment.test/docs/p',
+      },
+    },
+  };
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    app = await createApp({
+      config,
+      originSecret: stubSource(SECRET),
+      logger: silentLogger().logger,
+    });
+  });
+
+  afterEach(() => {
+    nock.cleanAll();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    nock.enableNetConnect();
+  });
+
+  it('answers 200 with the acceptance tokens from the provider through the real module', async () => {
+    nock(PROVIDER_ORIGIN).get(MERCHANT_PATH).reply(200, providerBody);
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/acceptance-tokens')
+      .set('X-Origin-Verify', SECRET);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      acceptanceToken: {
+        token: 'tok_test_fake_acceptance',
+        permalink: 'https://payment.test/docs/a',
+      },
+      acceptPersonalAuth: {
+        token: 'tok_test_fake_personal',
+        permalink: 'https://payment.test/docs/p',
+      },
+    });
+  });
+
+  it('answers 502 PAYMENT_PROVIDER_ERROR without the provider status or body', async () => {
+    nock(PROVIDER_ORIGIN).get(MERCHANT_PATH).reply(401, { echo: 'provider-internal-detail' });
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/acceptance-tokens')
+      .set('X-Origin-Verify', SECRET);
+
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({
+      statusCode: 502,
+      code: 'PAYMENT_PROVIDER_ERROR',
+      message: 'The payment provider could not process the request.',
+      details: [],
+    });
+    expect(response.text).not.toContain('provider-internal-detail');
   });
 });
