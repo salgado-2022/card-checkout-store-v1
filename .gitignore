@@ -19,7 +19,8 @@ tfplan
 node_modules/
 coverage/
 dist/
-build/
+# Anchored: api/test/build/ holds tests and must stay tracked.
+/api/build/
 lambda.zip
 
 # Logs
