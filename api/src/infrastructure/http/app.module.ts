@@ -17,6 +17,8 @@ import { GetCustomer } from '../../application/use-cases/get-customer';
 import { GetFees } from '../../application/use-cases/get-fees';
 import { GetProduct } from '../../application/use-cases/get-product';
 import { GetProducts } from '../../application/use-cases/get-products';
+import { GetDelivery } from '../../application/use-cases/get-delivery';
+import { SyncTransactionStatus } from '../../application/use-cases/sync-transaction-status';
 import { UpsertCustomer } from '../../application/use-cases/upsert-customer';
 import {
   PaymentGatewayAdapter,
@@ -36,6 +38,7 @@ import { FeesController } from './controllers/fees.controller';
 import { HealthController } from './controllers/health.controller';
 import { ProductsController } from './controllers/products.controller';
 import { TransactionsController } from './controllers/transactions.controller';
+import { DeliveriesController } from './controllers/deliveries.controller';
 import { ApplicationLoggerAdapter } from './logging/application-logger.adapter';
 import { JsonLogger } from './logging/json-logger';
 import { OriginGuardMiddleware } from './middleware/origin-guard.middleware';
@@ -75,6 +78,7 @@ export class AppModule {
         CustomersController,
         AcceptanceTokensController,
         TransactionsController,
+        DeliveriesController,
       ],
       providers: [
         { provide: APP_CONFIG, useValue: options.config },
@@ -170,6 +174,28 @@ export class AppModule {
             clock: Clock,
           ) => new FinalizeTransaction(transactions, logger, clock),
           inject: [TRANSACTION_REPOSITORY, APPLICATION_LOGGER, CLOCK],
+        },
+        {
+          provide: GetDelivery,
+          useFactory: (deliveries: DeliveryRepository) => new GetDelivery(deliveries),
+          inject: [DELIVERY_REPOSITORY],
+        },
+        {
+          provide: SyncTransactionStatus,
+          useFactory: (
+            transactions: TransactionRepository,
+            gateway: PaymentGatewayAdapter,
+            finalize: FinalizeTransaction,
+            logger: ApplicationLogger,
+            clock: Clock,
+          ) => new SyncTransactionStatus(transactions, gateway, finalize, logger, clock),
+          inject: [
+            TRANSACTION_REPOSITORY,
+            PAYMENT_GATEWAY,
+            FinalizeTransaction,
+            APPLICATION_LOGGER,
+            CLOCK,
+          ],
         },
         {
           provide: CreateTransaction,
