@@ -164,6 +164,12 @@ resource "aws_iam_policy" "lambda_boundary" {
         ]
       },
       {
+        Sid      = "ProductsTableScan"
+        Effect   = "Allow"
+        Action   = ["dynamodb:Scan"]
+        Resource = "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-products"
+      },
+      {
         Sid      = "WriteOwnLogs"
         Effect   = "Allow"
         Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
@@ -324,6 +330,12 @@ resource "aws_iam_role_policy" "deploy" {
           "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*",
           "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-*/index/*",
         ]
+      },
+      {
+        Sid      = "ProductsTableSeedItems"
+        Effect   = "Allow"
+        Action   = ["dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:DeleteItem"]
+        Resource = "arn:aws:dynamodb:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-products"
       },
       {
         Sid    = "SsmOriginParameter"

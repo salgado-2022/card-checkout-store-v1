@@ -91,6 +91,14 @@ data "aws_iam_policy_document" "lambda_exec" {
     resources = local.dynamodb_resource_arns
   }
 
+  # GET /products reads the whole catalog with a Scan. Only the products table is granted.
+  statement {
+    sid       = "ProductsTableScan"
+    effect    = "Allow"
+    actions   = ["dynamodb:Scan"]
+    resources = [aws_dynamodb_table.products.arn]
+  }
+
   statement {
     sid       = "WriteOwnLogs"
     effect    = "Allow"

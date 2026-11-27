@@ -247,6 +247,7 @@ describe('infra/bootstrap deploy role policy (static)', () => {
         'dynamodb:GetItem',
         'dynamodb:PutItem',
         'dynamodb:Query',
+        'dynamodb:Scan',
         'dynamodb:UpdateItem',
         'kms:Decrypt',
         'logs:CreateLogStream',
