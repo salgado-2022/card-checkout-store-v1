@@ -54,14 +54,18 @@ describe('infra/bootstrap state bucket (static)', () => {
     expect(blockBody(code, 'provider "aws"')).toMatch(/region\s*=\s*"us-east-2"/);
   });
 
-  it.each(['github_owner', 'github_repo', 'state_bucket_name', 'project_name'])(
-    'declares variable %s without a default',
-    (name) => {
-      const body = blockBody(code, `variable "${name}"`);
-      expect(body).toMatch(/type\s*=\s*string/);
-      expect(body).not.toMatch(/\bdefault\s*=/);
-    },
-  );
+  it.each([
+    'github_owner',
+    'github_owner_id',
+    'github_repo',
+    'github_repo_id',
+    'state_bucket_name',
+    'project_name',
+  ])('declares variable %s without a default', (name) => {
+    const body = blockBody(code, `variable "${name}"`);
+    expect(body).toMatch(/type\s*=\s*string/);
+    expect(body).not.toMatch(/\bdefault\s*=/);
+  });
 
   it('creates the state bucket with force_destroy = false', () => {
     const body = blockBody(code, 'resource "aws_s3_bucket" "state"');

@@ -8,6 +8,26 @@ variable "github_repo" {
   type        = string
 }
 
+variable "github_owner_id" {
+  description = "Numeric id of the GitHub owner, part of the OIDC subject claim (gh api users/<owner> --jq .id)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_owner_id))
+    error_message = "github_owner_id must be the numeric GitHub owner id."
+  }
+}
+
+variable "github_repo_id" {
+  description = "Numeric id of the GitHub repository, part of the OIDC subject claim (gh api repos/<owner>/<repo> --jq .id)."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repo_id))
+    error_message = "github_repo_id must be the numeric GitHub repository id."
+  }
+}
+
 variable "state_bucket_name" {
   description = "Globally unique name of the S3 bucket that stores the remote Terraform state of infra/."
   type        = string

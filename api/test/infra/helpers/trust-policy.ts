@@ -28,7 +28,9 @@ export interface ClaimSet {
 
 export interface RepositoryVariables {
   github_owner: string;
+  github_owner_id: string;
   github_repo: string;
+  github_repo_id: string;
 }
 
 const AUD_VARIABLE = 'token.actions.githubusercontent.com:aud';
@@ -85,7 +87,9 @@ function stringValue(body: string, attribute: string): string {
 function resolveVariables(value: string, variables: RepositoryVariables): string {
   return value
     .replaceAll('${var.github_owner}', variables.github_owner)
-    .replaceAll('${var.github_repo}', variables.github_repo);
+    .replaceAll('${var.github_owner_id}', variables.github_owner_id)
+    .replaceAll('${var.github_repo}', variables.github_repo)
+    .replaceAll('${var.github_repo_id}', variables.github_repo_id);
 }
 
 export function parseTrustPolicy(hcl: string, variables: RepositoryVariables): TrustPolicy {

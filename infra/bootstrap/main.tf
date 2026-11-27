@@ -89,6 +89,8 @@ locals {
 }
 # Trust policy of the deploy role: only this repository's master branch and its
 # production environment can assume it. StringEquals only, no wildcards.
+# GitHub sends the immutable subject format "repo:<owner>@<owner_id>/<repo>@<repo_id>:...",
+# so a deleted and re-created repository with the same name cannot assume this role.
 data "aws_iam_policy_document" "deploy_trust" {
   statement {
     effect  = "Allow"
@@ -106,8 +108,8 @@ data "aws_iam_policy_document" "deploy_trust" {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_owner}/${var.github_repo}:ref:refs/heads/master",
-        "repo:${var.github_owner}/${var.github_repo}:environment:production",
+        "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:ref:refs/heads/master",
+        "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repo_id}:environment:production",
       ]
     }
   }
