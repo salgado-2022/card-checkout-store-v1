@@ -67,6 +67,17 @@ data "aws_iam_policy_document" "lambda_exec" {
   }
 
   statement {
+    sid       = "DecryptParametersViaSsm"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = ["arn:aws:kms:us-east-1:${data.aws_caller_identity.current.account_id}:key/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["ssm.us-east-1.amazonaws.com"]
+    }
+  }
+  statement {
     sid    = "TablesAccess"
     effect = "Allow"
     actions = [

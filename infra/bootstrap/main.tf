@@ -23,6 +23,34 @@ provider "aws" {
 resource "aws_s3_bucket" "state" {
   bucket        = var.state_bucket_name
   force_destroy = false
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Refuse any request to the state bucket that is not sent over TLS.
+data "aws_iam_policy_document" "state_bucket" {
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.state.arn, "${aws_s3_bucket.state.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "state" {
+  bucket     = aws_s3_bucket.state.id
+  policy     = data.aws_iam_policy_document.state_bucket.json
+  depends_on = [aws_s3_bucket_public_access_block.state]
 }
 
 resource "aws_s3_bucket_versioning" "state" {
@@ -107,6 +135,17 @@ resource "aws_iam_policy" "lambda_boundary" {
         Resource = "arn:aws:ssm:us-east-1:${data.aws_caller_identity.current.account_id}:parameter/${var.project_name}/*"
       },
       {
+        Sid      = "DecryptParametersViaSsm"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = "arn:aws:kms:us-east-1:${data.aws_caller_identity.current.account_id}:key/*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "ssm.us-east-1.amazonaws.com"
+          }
+        }
+      },
+      {
         Sid    = "TablesAccess"
         Effect = "Allow"
         Action = [
@@ -189,8 +228,8 @@ resource "aws_iam_role_policy" "deploy" {
           "s3:DeleteObject",
         ]
         Resource = [
-          "arn:aws:s3:::${var.project_name}-web",
-          "arn:aws:s3:::${var.project_name}-web/*",
+          "arn:aws:s3:::${var.project_name}-web-${data.aws_caller_identity.current.account_id}",
+          "arn:aws:s3:::${var.project_name}-web-${data.aws_caller_identity.current.account_id}/*",
         ]
       },
       {
@@ -310,7 +349,6 @@ resource "aws_iam_role_policy" "deploy" {
         Action = [
           "iam:GetRole",
           "iam:UpdateRole",
-          "iam:UpdateAssumeRolePolicy",
           "iam:DeleteRole",
           "iam:TagRole",
           "iam:UntagRole",

@@ -68,6 +68,24 @@ describe('infra/bootstrap state bucket (static)', () => {
     expect(body).toMatch(/force_destroy\s*=\s*false/);
     expect(body).toMatch(/bucket\s*=\s*var\.state_bucket_name/);
   });
+  it('protects the state bucket from terraform destroy with prevent_destroy = true', () => {
+    const body = blockBody(code, 'resource "aws_s3_bucket" "state"');
+    expect(blockBody(body, 'lifecycle')).toMatch(/prevent_destroy\s*=\s*true/);
+  });
+  it('denies every request to the state bucket that does not use TLS', () => {
+    const doc = blockBody(code, 'data "aws_iam_policy_document" "state_bucket"');
+    const statement = blockBody(doc, 'statement');
+    expect(statement).toMatch(/effect\s*=\s*"Deny"/);
+    expect(statement).toMatch(/actions\s*=\s*\["s3:\*"\]/);
+    expect(statement).toContain('aws_s3_bucket.state.arn');
+    expect(statement).toContain('"${aws_s3_bucket.state.arn}/*"');
+    expect(statement).toMatch(/test\s*=\s*"Bool"/);
+    expect(statement).toMatch(/variable\s*=\s*"aws:SecureTransport"/);
+    expect(statement).toMatch(/values\s*=\s*\["false"\]/);
+    const policy = blockBody(code, 'resource "aws_s3_bucket_policy" "state"');
+    expect(policy).toMatch(/bucket\s*=\s*aws_s3_bucket\.state\.id/);
+    expect(policy).toMatch(/policy\s*=\s*data\.aws_iam_policy_document\.state_bucket\.json/);
+  });
 
   it('enables versioning on the state bucket', () => {
     const body = blockBody(code, 'resource "aws_s3_bucket_versioning" "state"');

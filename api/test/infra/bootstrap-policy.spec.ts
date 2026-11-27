@@ -237,7 +237,9 @@ describe('infra/bootstrap deploy role policy (static)', () => {
   it('defines the lambda boundary policy with only the actions the Lambda needs', () => {
     const boundary = resourceBlock(mainTf, 'resource "aws_iam_policy" "lambda_boundary"');
     expect(boundary).toMatch(/name\s*=\s*"\$\{var\.project_name\}-lambda-boundary"/);
-    const allowed = quotedValues(boundary).filter((v) => /^[a-z0-9]+:[A-Za-z]+$/.test(v));
+    const allowed = quotedValues(boundary).filter(
+      (v) => /^[a-z0-9]+:[A-Za-z]+$/.test(v) && v !== 'kms:ViaService',
+    );
     expect(allowed.sort()).toEqual(
       [
         'dynamodb:ConditionCheckItem',
@@ -246,10 +248,16 @@ describe('infra/bootstrap deploy role policy (static)', () => {
         'dynamodb:PutItem',
         'dynamodb:Query',
         'dynamodb:UpdateItem',
+        'kms:Decrypt',
         'logs:CreateLogStream',
         'logs:PutLogEvents',
         'ssm:GetParameter',
       ].sort(),
+    );
+    const decrypt = boundary.slice(boundary.indexOf('"DecryptParametersViaSsm"'));
+    expect(decrypt).toMatch(/Resource\s*=\s*"arn:aws:kms:us-east-1:\$\{[^}]+\}:key\/\*"/);
+    expect(decrypt).toMatch(
+      /StringEquals\s*=\s*{\s*"kms:ViaService"\s*=\s*"ssm\.us-east-1\.amazonaws\.com"\s*}/,
     );
     expect(boundary).toContain('parameter/${var.project_name}/*');
     expect(boundary).toContain('table/${var.project_name}-*/index/*');
@@ -261,7 +269,10 @@ describe('infra/bootstrap deploy role policy (static)', () => {
   });
   it('prefixes S3 web, Lambda, DynamoDB, SSM, Logs and Budgets resources with project_name', () => {
     const expectations: Record<string, string[]> = {
-      WebBucket: ['arn:aws:s3:::${var.project_name}-web', 'arn:aws:s3:::${var.project_name}-web/*'],
+      WebBucket: [
+        'arn:aws:s3:::${var.project_name}-web-${data.aws_caller_identity.current.account_id}',
+        'arn:aws:s3:::${var.project_name}-web-${data.aws_caller_identity.current.account_id}/*',
+      ],
       Lambda: [
         'arn:aws:lambda:us-east-1:${data.aws_caller_identity.current.account_id}:function:${var.project_name}-*',
       ],
@@ -319,6 +330,21 @@ describe('infra/bootstrap deploy role policy (static)', () => {
     expect(policyBlock).not.toMatch(/\/payment\b/i);
     expect(policyBlock).not.toContain('/payment/');
     expect(policyBlock).not.toMatch(/parameter\/\*|parameter\/\$\{var\.project_name\}\/\*/);
+  });
+
+  it('never lets the deploy role rewrite the trust policy of any role', () => {
+    const actions = statements.flatMap((s) => s.actions);
+    expect(actions).not.toContain('iam:UpdateAssumeRolePolicy');
+    expect(policyBlock).not.toContain('UpdateAssumeRolePolicy');
+  });
+
+  it('covers the account-scoped web bucket name declared in infra/s3.tf', () => {
+    const s3Tf = fs.readFileSync(path.resolve(BOOTSTRAP_DIR, '../s3.tf'), 'utf8');
+    const name = /resource\s+"aws_s3_bucket"\s+"web"\s*{\s*bucket\s*=\s*"([^"]+)"/.exec(s3Tf)?.[1];
+    expect(name).toBe('${var.project_name}-web-${data.aws_caller_identity.current.account_id}');
+    const [bucketArn, objectsArn] = bySid('WebBucket').resources;
+    expect(bucketArn).toBe(`arn:aws:s3:::${name}`);
+    expect(objectsArn).toBe(`arn:aws:s3:::${name}/*`);
   });
 
   it('does not reference the OIDC provider or the deploy role in any statement', () => {
