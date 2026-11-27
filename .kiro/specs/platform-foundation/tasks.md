@@ -322,26 +322,26 @@ Conventions for every task:
   - Ensure all tests pass, ask the user if questions arise.
   - _Requirements: 3.6, 6.6, 12.15, 19.8_
 
-- [ ] 14. **[MANUAL — developer only]** Commit, bootstrap, deploy and verify
+- [x] 14. **[MANUAL — developer only]** Commit, bootstrap, deploy and verify
   - Agents skip this whole section. Order matters: steps 14.2, 14.3 and 14.4 must be finished before merging the PR, because the green CI run on `master` after the merge starts `deploy.yml`.
-  - [ ] 14.1 **[MANUAL]** Commit, push and open the `feat/infra-base` pull request
+  - [x] 14.1 **[MANUAL]** Commit, push and open the `feat/infra-base` pull request
     - Create branch `feat/infra-base`, commit in small Conventional Commits (for example `feat(api): add config loader`, `feat(api): add origin guard and health`, `feat(infra): add terraform base`, `feat(infra): add bootstrap module`, `ci: add deploy workflow`, `docs: add deployment guide`), push, open the PR and wait for green CI. Do not merge yet.
     - Agents must not run `git commit` or `git push`.
     - _Requirements: 18.5_
-  - [ ] 14.2 **[MANUAL]** Run `infra/bootstrap` once with your own AWS credentials
+  - [x] 14.2 **[MANUAL]** Run `infra/bootstrap` once with your own AWS credentials
     - In `infra/bootstrap/` with your own credentials: `terraform init`, `terraform plan -var ...`, review, `terraform apply` (`github_owner=salgado-2022`, `github_repo=card-checkout-store`, a globally unique `state_bucket_name`, `project_name`). Note the outputs `deploy_role_arn` and `state_bucket_name`. Keep the local state file outside git.
     - Agents must not run `terraform apply` or `terraform destroy`.
     - _Requirements: 19.1, 19.4, 19.6, 24.2, 24.8_
-  - [ ] 14.3 **[MANUAL]** Create the GitHub Environment and load the Deploy_Variables
+  - [x] 14.3 **[MANUAL]** Create the GitHub Environment and load the Deploy_Variables
     - Create the Environment `production` with at least one required reviewer. Set the repository variables `AWS_ROLE_ARN`, `AWS_REGION` (`us-east-2`), `TF_STATE_BUCKET`, `BUDGET_NOTIFICATION_EMAIL`, `PAYMENT_API_URL`, `PAYMENT_PUBLIC_KEY` (variables, never secrets; no AWS access keys anywhere).
     - _Requirements: 22.2, 24.3, 24.4, 20.10_
-  - [ ] 14.4 **[MANUAL]** Create the three payment secrets in SSM
+  - [x] 14.4 **[MANUAL]** Create the three payment secrets in SSM
     - With your own AWS credentials, before the first deploy: `aws ssm put-parameter --type SecureString --name /<project_name>/payment/private-key --value file://<local-file>`, and the same for `integrity-secret` and `events-secret`, with the real sandbox values. Reading from a local file keeps the values out of shell history; delete the files afterwards. Never paste values into the repository, GitHub, chat or Terraform. Terraform never manages these parameters.
     - _Requirements: 6.1, 12.11a, 24.6, 24.7_
-  - [ ] 14.5 **[MANUAL]** Merge and approve the first deploy
+  - [x] 14.5 **[MANUAL]** Merge and approve the first deploy
     - Squash merge the PR to `master` (or trigger `workflow_dispatch` from `master`); `deploy.yml` starts when `ci.yml` finishes green on `master`. Read the plan summary of the `plan` job, approve the `production` gate and wait for `apply`, `deploy-api`, `deploy-web` and `smoke-test` to finish. Confirm the budget subscription email.
     - _Requirements: 15.5, 21.1, 22.2, 22.3, 24.5_
-  - [ ] 14.6 **[MANUAL]** Verify with curl and re-run the deploy if needed
+  - [x] 14.6 **[MANUAL]** Verify with curl and re-run the deploy if needed
     - Run `bash scripts/smoke-test.sh https://<distribution-domain>` and the manual checks: `curl -I` returns the six security headers on `/` and `/api/v1/health`; health returns 200 and `{"status":"ok"}`; `GET /some/deep/route` returns 200 `index.html`; `GET /api/v1/unknown-route` returns a JSON 4xx; the Function URL called directly returns 403; HTTP redirects to HTTPS. If anything fails, re-run the workflow (`workflow_dispatch`) and approve it. Save evidence for the README.
     - _Requirements: 8.5, 13.4, 13.5, 13.6, 14.3, 14.4, 15.1, 15.2, 15.3, 23.1, 24.9, HU-17_
 
