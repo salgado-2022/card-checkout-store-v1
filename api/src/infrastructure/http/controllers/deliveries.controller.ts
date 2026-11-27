@@ -1,5 +1,10 @@
 import { Controller, Get, Param } from '@nestjs/common';
-import { ApiNotFoundResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiTooManyRequestsResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import type { Delivery } from '../../../domain/entities';
 import { isUlid } from '../../../domain/ulid';
 import { GetDelivery } from '../../../application/use-cases/get-delivery';
@@ -34,6 +39,7 @@ export class DeliveriesController {
   constructor(private readonly getDelivery: GetDelivery) {}
 
   @Get(':id')
+  @ApiTooManyRequestsResponse({ type: ErrorEnvelopeDto, description: 'TOO_MANY_REQUESTS' })
   @ApiOkResponse({ type: DeliveryResponseDto })
   @ApiNotFoundResponse({ type: ErrorEnvelopeDto, description: 'DELIVERY_NOT_FOUND' })
   async detail(@Param('id') id: string): Promise<DeliveryResponseDto> {

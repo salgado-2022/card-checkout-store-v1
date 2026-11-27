@@ -39,6 +39,7 @@ import { HealthController } from './controllers/health.controller';
 import { ProductsController } from './controllers/products.controller';
 import { TransactionsController } from './controllers/transactions.controller';
 import { DeliveriesController } from './controllers/deliveries.controller';
+import { RateLimitModule } from './security/rate-limit.module';
 import { ApplicationLoggerAdapter } from './logging/application-logger.adapter';
 import { JsonLogger } from './logging/json-logger';
 import { OriginGuardMiddleware } from './middleware/origin-guard.middleware';
@@ -71,6 +72,7 @@ export class AppModule {
   static register(options: AppModuleOptions): DynamicModule {
     return {
       module: AppModule,
+      imports: [RateLimitModule],
       controllers: [
         HealthController,
         ProductsController,
