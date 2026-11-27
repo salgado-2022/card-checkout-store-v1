@@ -102,13 +102,18 @@ describe('Feature: platform-foundation, Property 3: health responds without side
     );
   });
 
-  it('control: the HTTPS spy does observe an outbound connection attempt', async () => {
+  // The control opens the connection through an HTTPS agent directly. `https.get` is not used here
+  // because another test file in the same Jest worker may have loaded nock, which patches the shared
+  // `https` module and changes how `https.get` builds its request.
+  it('control: the HTTPS spy does observe an outbound connection attempt', () => {
     httpsConnectSpy.mockClear();
 
-    await new Promise<void>((resolve) => {
-      const outbound = https.get('https://127.0.0.1:1/', () => resolve());
-      outbound.on('error', () => resolve());
-    });
+    const socket = new https.Agent().createConnection(
+      { host: '127.0.0.1', port: 1 },
+      () => undefined,
+    );
+    socket?.on('error', () => undefined);
+    socket?.destroy();
 
     expect(httpsConnectSpy).toHaveBeenCalled();
     httpsConnectSpy.mockClear();

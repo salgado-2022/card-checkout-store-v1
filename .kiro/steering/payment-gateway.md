@@ -45,6 +45,6 @@ Finalization = one `TransactWriteItems`: transaction update conditioned on `stat
 Checked on 2026-11-27 with the private key against the Sandbox, before branch 3.
 - Request: `GET {PAYMENT_API_URL}/transactions?reference=<reference>` with `Authorization: Bearer <private key>`.
 - Not found: HTTP 200 with body `{"data":[],"meta":{}}`. An empty `data` array means `not_found`; it is not an error and is not retried.
-- Found: `data` is an array whose items are transactions (provider id, status, `reference`, `amount_in_cents`, `currency`). Not checked yet: it is confirmed in branch 3 with the first transaction created through the API, before `findByReference` is implemented in branch 4. If several items come back, use the one whose `reference` matches exactly.
+- Found (checked on 2026-11-27 with the first transaction created through the API): HTTP 200, `data` is an array with one item. The item carries `id` (the External_Id), `status`, `status_message` (`null` when APPROVED), `reference`, `amount_in_cents`, `currency`, `created_at`, `finalized_at`, `customer_email`, `payment_method_type`, `payment_method` and other fields the API ignores. If several items come back, use the one whose `reference` matches exactly. `amount_in_cents`, `currency` and `reference` feed the Amount_Check.
 - Without a key the provider answers HTTP 401 with `error.type` `INVALID_ACCESS_TOKEN`: map it to `REJECTED` (a configuration problem, never retried).
 

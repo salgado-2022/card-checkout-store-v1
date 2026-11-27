@@ -20,6 +20,9 @@ import type {
 import type { ProductRepository } from '../ports/product-repository';
 import type { NewTransaction, TransactionRepository } from '../ports/transaction-repository';
 import { requestHash, type JsonValue } from '../request-hash';
+import { toTransactionResponse } from './transaction-response';
+
+export type { TransactionResponseBody } from './transaction-response';
 import type { FeeSchedule } from './get-fees';
 import { providerReason } from '../provider-reason';
 import type { FinalizeTransaction } from './finalize-transaction';
@@ -66,23 +69,6 @@ export interface CreateTransactionInput {
 export interface CreateTransactionOutput {
   readonly statusCode: number;
   readonly body: unknown;
-}
-
-/** Response shape of Requirement 5.14: nothing else is ever exposed. */
-export interface TransactionResponseBody {
-  readonly id: string;
-  readonly reference: string;
-  readonly status: Transaction['status'];
-  readonly amounts: {
-    readonly currency: string;
-    readonly subtotalInCents: number;
-    readonly baseFeeInCents: number;
-    readonly deliveryFeeInCents: number;
-    readonly totalInCents: number;
-  };
-  readonly deliveryId: string;
-  readonly card: { readonly brand: CardBrand; readonly lastFour: string };
-  readonly createdAt: string;
 }
 
 /**
@@ -197,7 +183,7 @@ export class CreateTransaction {
           })
         : okAsync<CreateTransactionOutput, CreateTransactionError>({
             statusCode: 200,
-            body: toResponseBody(transaction),
+            body: toTransactionResponse(transaction),
           }),
     );
   }
@@ -400,7 +386,7 @@ function reasonFor(response: PaymentCreateResponse): { statusReason?: string } {
 }
 
 function created(transaction: Transaction): CreateTransactionOutput {
-  return { statusCode: 201, body: toResponseBody(transaction) };
+  return { statusCode: 201, body: toTransactionResponse(transaction) };
 }
 
 function validateKey(key: string | undefined): Result<string, ApplicationError> {
@@ -456,23 +442,5 @@ function newTransaction(request: CreateTransactionRequest, plan: Plan, at: strin
     cardBrand: request.payment.brand,
     cardLastFour: request.payment.lastFour,
     createdAt: at,
-  };
-}
-
-function toResponseBody(transaction: Transaction): TransactionResponseBody {
-  return {
-    id: transaction.id,
-    reference: transaction.reference,
-    status: transaction.status,
-    amounts: {
-      currency: transaction.currency,
-      subtotalInCents: transaction.subtotalInCents,
-      baseFeeInCents: transaction.baseFeeInCents,
-      deliveryFeeInCents: transaction.deliveryFeeInCents,
-      totalInCents: transaction.totalInCents,
-    },
-    deliveryId: transaction.deliveryId,
-    card: { brand: transaction.cardBrand, lastFour: transaction.cardLastFour },
-    createdAt: transaction.createdAt,
   };
 }

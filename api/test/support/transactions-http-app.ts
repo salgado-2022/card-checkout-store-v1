@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import type { Customer, Product } from '../../src/domain/entities';
 import { CreateTransaction } from '../../src/application/use-cases/create-transaction';
 import { FinalizeTransaction } from '../../src/application/use-cases/finalize-transaction';
+import { SyncTransactionStatus } from '../../src/application/use-cases/sync-transaction-status';
 import { TransactionsController } from '../../src/infrastructure/http/controllers/transactions.controller';
 import { ResultExceptionFilter } from '../../src/infrastructure/http/filters/result-exception.filter';
 import { GLOBAL_PREFIX } from '../../src/infrastructure/http/create-app';
@@ -56,6 +57,7 @@ export interface TransactionsHttpApp {
   readonly transactions: InMemoryTransactionRepository;
   readonly idempotency: InMemoryIdempotencyRepository;
   readonly gateway: FakePaymentGateway;
+  readonly logger: FakeApplicationLogger;
 }
 
 // Builds the transactions controller with the real use cases over in-memory fakes. Only the
@@ -86,14 +88,34 @@ export async function createTransactionsHttpApp(
     clock,
     logger,
   );
+  const syncTransactionStatus = new SyncTransactionStatus(
+    transactions,
+    gateway,
+    finalize,
+    logger,
+    clock,
+  );
   const moduleRef = await Test.createTestingModule({
     controllers: [TransactionsController],
-    providers: [{ provide: CreateTransaction, useValue: createTransaction }],
+    providers: [
+      { provide: CreateTransaction, useValue: createTransaction },
+      { provide: SyncTransactionStatus, useValue: syncTransactionStatus },
+    ],
   }).compile();
   const app = moduleRef.createNestApplication();
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.useGlobalPipes(createValidationPipe());
   app.useGlobalFilters(new ResultExceptionFilter(silentLogger));
   await app.init();
-  return { app, clock, products, customers, deliveries, transactions, idempotency, gateway };
+  return {
+    app,
+    clock,
+    products,
+    customers,
+    deliveries,
+    transactions,
+    idempotency,
+    gateway,
+    logger,
+  };
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Res } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
@@ -11,10 +11,17 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { isUlid } from '../../../domain/ulid';
 import { CreateTransaction } from '../../../application/use-cases/create-transaction';
+import { SyncTransactionStatus } from '../../../application/use-cases/sync-transaction-status';
+import {
+  toTransactionDetailResponse,
+  type TransactionDetailBody,
+} from '../../../application/use-cases/transaction-response';
 import { toHttpException } from '../error-catalog';
 import { CreateTransactionDto } from '../dto/create-transaction.dto';
 import { ErrorEnvelopeDto } from '../dto/error-envelope.dto';
+import { TransactionDetailResponseDto } from '../dto/transaction-detail.response.dto';
 import { TransactionResponseDto } from '../dto/transaction.response.dto';
 
 export const IDEMPOTENCY_KEY_HEADER = 'idempotency-key';
@@ -24,7 +31,10 @@ export const IDEMPOTENCY_KEY_HEADER = 'idempotency-key';
 @ApiTags('transactions')
 @Controller('transactions')
 export class TransactionsController {
-  constructor(private readonly createTransaction: CreateTransaction) {}
+  constructor(
+    private readonly createTransaction: CreateTransaction,
+    private readonly syncTransactionStatus: SyncTransactionStatus,
+  ) {}
 
   @Post()
   @ApiHeader({
@@ -71,5 +81,23 @@ export class TransactionsController {
     }
     response.status(result.value.statusCode);
     return result.value.body;
+  }
+
+  @Get(':id')
+  @ApiOkResponse({
+    type: TransactionDetailResponseDto,
+    description: 'Current state of the Transaction.',
+  })
+  @ApiNotFoundResponse({ type: ErrorEnvelopeDto, description: 'TRANSACTION_NOT_FOUND' })
+  async detail(@Param('id') id: string): Promise<TransactionDetailBody> {
+    // A malformed id can never be stored, so it gets the same answer as an unknown one.
+    if (!isUlid(id)) {
+      throw toHttpException({ kind: 'TRANSACTION_NOT_FOUND' });
+    }
+    const result = await this.syncTransactionStatus.execute(id);
+    if (result.isErr()) {
+      throw toHttpException(result.error);
+    }
+    return toTransactionDetailResponse(result.value);
   }
 }

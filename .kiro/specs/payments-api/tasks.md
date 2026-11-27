@@ -376,93 +376,93 @@ Conventions for every task:
 ### Branch `feat/HU-11-sync-deliveries`
 
 - [ ] 4. Status sync, reconciliation, deliveries and the finalization properties
-  - [ ] 4.1 Payment gateway adapter: getStatus and findByReference
+  - [x] 4.1 Payment gateway adapter: getStatus and findByReference
     - Suggested executor: senior.
     - In `payment-gateway.adapter.ts` implement both methods under `withSingleAttemptProfile` (one attempt, 3 s timeout, no retry under any outcome). `getStatus(externalId)`: `GET {PAYMENT_API_URL}/transactions/{externalId}`; map the provider status to `PENDING`, `APPROVED`, `DECLINED`, `VOIDED` or `ERROR` plus the provider message, amount, currency and reference; any other value maps to an explicit `UNKNOWN` outcome that the use case treats as "keep PENDING and warn". `findByReference(reference)` per Open Point D and the Sandbox result recorded in `.kiro/steering/payment-gateway.md` by branch 2: a read-only lookup by our reference; an empty result, a 404 or a null transaction all map to `Ok({ kind: 'not_found' })`; a found record maps to `{ kind: 'found', externalId, status }` with the same provider fields; a timeout, a transport failure or any other HTTP error on the single attempt maps to `Err`. Neither method ever sends a creation request. Secrets and bodies stay out of logs and errors.
     - Tests with `nock` and fake timers: each known status, an unknown status, 4xx and 5xx give `Err` after exactly one request, a hanging response gives `Err` at 3 s with no second request, each not-found shape, the found shape.
     - _Requirements: 4.3, 8.2, 8.3, 8.7, 9.3, 9.7, 9.8, 17.8_
-  - [ ] 4.2 SyncTransactionStatus use case
+  - [x] 4.2 SyncTransactionStatus use case
     - Suggested executor: senior.
     - Create `api/src/application/use-cases/sync-transaction-status.ts`: load by id (`TRANSACTION_NOT_FOUND` when missing); a final status returns the stored state with no provider call; PENDING with an External_Id and `lastSyncedAt` at least 1 s old calls `getStatus`, stores `lastSyncedAt` and, for a final status, runs `FinalizeTransaction` with the provider-reported amount, currency and reference (Amount_Check included); younger than 1 s returns the stored state; a provider error or an unknown status keeps PENDING, sends no second request in the same call and writes a `warn` log; PENDING without an External_Id runs `findByReference`: `found` stores the External_Id and applies the status as above, `not_found` at or after 60 s of age runs `FinalizeTransaction` to ERROR with `statusReason` `PROVIDER_UNREACHABLE` (Delivery CANCELLED, stock unchanged, no report so no Amount_Check), `not_found` under 60 s keeps PENDING, a lookup error keeps PENDING with a `warn` log. This use case never calls `PaymentGateway.create`.
     - Tests with fakes and the fake clock for every branch above, including an APPROVED report whose amount differs from the stored total ending ERROR `AMOUNT_MISMATCH` with an alert log, and that exactly one `getStatus` or `findByReference` call is made per invocation.
     - _Requirements: 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 10.9, 10.10, 17.3, 17.4, 21.15_
-  - [ ] 4.3 Transaction response mapper, GET controller and wiring
+  - [x] 4.3 Transaction response mapper, GET controller and wiring
     - Add `TransactionsController.get` (`GET /transactions/:id`) answering `id`, `reference`, `status`, `statusReason` (when present), `amounts`, `deliveryId`, `card { brand, lastFour }`, `productId`, `quantity`, `installments`, `createdAt`, `updatedAt`, `finalizedAt` (when present). Use one shared response mapper for the create and get responses that never includes the External_Id, the card token or card data other than brand and last four. A malformed id gives 404 `TRANSACTION_NOT_FOUND`, never 400 or 500. Add swagger decorators for 200 and 404 and register the use case in `app.module.ts`.
     - supertest tests: full shape, optional fields, 404 for unknown and malformed ids, no `externalId` in the body.
     - _Requirements: 9.1, 9.2, 9.9, 13.9, 18.1_
-  - [ ] 4.4 GetDelivery use case, controller and wiring
+  - [x] 4.4 GetDelivery use case, controller and wiring
     - Create `get-delivery.ts` (`null` gives `DELIVERY_NOT_FOUND`) and `DeliveriesController` (`GET /deliveries/:id`) answering `id`, `transactionId`, `productId`, `quantity`, `recipientName`, `phone`, `addressLine1`, `addressLine2` (when present), `city`, `department`, `postalCode` (when present), `status`, `createdAt`, `updatedAt`. A malformed id gives 404. Swagger decorators for 200 and 404; register in `app.module.ts`. Add a test that a Delivery created by `CreateTransaction` carries the `transactionId` of its Transaction.
     - Tests: use case with fakes; supertest 200 shape with and without the optional fields, 404 for unknown and malformed ids.
     - _Requirements: 11.1, 11.2, 13.9, 17.3, 18.1_
-  - [ ] 4.5 Scenario test for an unreachable provider
+  - [x] 4.5 Scenario test for an unreachable provider
     - Jest test `api/test/scenarios/provider-unreachable.spec.ts` wiring the real use cases to fakes and the real gateway adapter over `nock`: create with a timeout then a 5xx gives 201 PENDING without External_Id; a later `GET` links the External_Id through the reference lookup (one attempt, no retry) without a second creation call; a missing record after 60 s ends ERROR `PROVIDER_UNREACHABLE` with the Delivery CANCELLED and stock unchanged. A second scenario: timeout then a 4xx on the retry gives 201 PENDING with no lookup in the `POST`, then the `GET` reconciles.
     - _Requirements: 8.1, 8.2, 8.4, 8.5, 21.5, 21.15_
-  - [ ] 4.6 Property test for no second charge
+  - [x] 4.6 Property test for no second charge
     - **Property 26: An unreachable Provider never produces a second charge for the same reference**
     - **Validates: Requirements 8.2**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). For any Reference, across the creation (one call plus at most one retry inside the adapter) and any number of `GET /transactions/:id` calls, `PaymentGateway.create` is invoked at most once.
     - _Requirements: 8.2, 21.17_
-  - [ ] 4.7 Property test for reconciliation outcomes
+  - [x] 4.7 Property test for reconciliation outcomes
     - **Property 27: Reconciliation outcomes are applied correctly and only when needed**
     - **Validates: Requirements 8.3, 8.4, 8.5, 8.6, 8.7**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over transaction age and lookup outcome (`found` with a status, `not_found`, error): the expected External_Id storage, status, `PROVIDER_UNREACHABLE` ERROR at or after 60 s, PENDING otherwise, warning log on error, exactly one lookup attempt per `GET`.
     - _Requirements: 8.3, 8.4, 8.5, 8.6, 8.7, 21.17_
-  - [ ] 4.8 Property test for the sync throttle
+  - [x] 4.8 Property test for the sync throttle
     - **Property 28: Provider sync is throttled to once per second and skipped once final**
     - **Validates: Requirements 9.3, 9.4, 9.6**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over sequences of `GET` calls with advancing fake time: a provider call only when `lastSyncedAt` is at least 1 s old (and `lastSyncedAt` is updated), and none after a final status.
     - _Requirements: 9.3, 9.4, 9.6, 21.17_
-  - [ ] 4.9 Property test for unknown provider statuses
+  - [x] 4.9 Property test for unknown provider statuses
     - **Property 29: Unrecognized Provider status values are rejected safely**
     - **Validates: Requirements 9.8**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). For any string outside the five known statuses, the Transaction stays PENDING, a warning is logged and the response is a normal 200 with a known status.
     - _Requirements: 9.8, 21.17_
-  - [ ] 4.10 Property test for finalization side effects
+  - [x] 4.10 Property test for finalization side effects
     - **Property 30: Finalization applies the correct side effects per outcome**
     - **Validates: Requirements 10.1, 10.2, 10.4**
     - `fast-check` with `numRuns: 100` (use-case and adapter level with `aws-sdk-client-mock`, no HTTP). For any PENDING transaction and final status whose Amount_Check matches: APPROVED gives Transaction APPROVED, Delivery ASSIGNED, `stock -= quantity`; DECLINED, VOIDED and ERROR give the same status, Delivery CANCELLED, unchanged stock, the provider message as `statusReason`; `finalizedAt` is always set.
     - _Requirements: 10.1, 10.2, 10.4, 21.7, 21.17_
-  - [ ] 4.11 Property test for finalization idempotency
+  - [x] 4.11 Property test for finalization idempotency
     - **Property 31: Finalization is idempotent**
     - **Validates: Requirements 10.6**
     - `fast-check` with `numRuns: 100` (use-case and adapter level with `aws-sdk-client-mock`, no HTTP). Running `FinalizeTransaction` N times with any statuses on one transaction leaves the same stock, Delivery status and Transaction status as the first call, and never decrements twice.
     - _Requirements: 10.6, 21.7, 21.17_
-  - [ ] 4.12 Property test for backorder and concurrency
+  - [x] 4.12 Property test for backorder and concurrency
     - **Property 33: Approval without enough stock produces BACKORDER, never negative stock**
     - **Validates: Requirements 10.5, 10.8**
     - `fast-check` with `numRuns: 100` (use-case and adapter level, no HTTP). APPROVED with `stock < quantity` gives Transaction APPROVED, Delivery BACKORDER, stock unchanged and an alert log with the Reference and product id; N interleaved finalizations of different transactions on one product never take stock below 0 (use the in-memory repository with conditional semantics and a `fast-check` scheduler).
     - _Requirements: 10.5, 10.8, 21.7, 21.17_
-  - [ ] 4.13 Property test for the Amount_Check gate
+  - [x] 4.13 Property test for the Amount_Check gate
     - **Property 46: Amount_Check gates finalization, overriding even an APPROVED report**
     - **Validates: Requirements 10.9, 10.10, 10.11**
     - `fast-check` with `numRuns: 100` (pure function plus use-case level with in-memory fakes, no HTTP). Part one, `checkAmount`: over arbitrary reported and stored triples, the result is `match` if and only if the amount, currency and reference are all equal, and a mismatch lists exactly the differing fields. Part two, `FinalizeTransaction` with fakes, driven through the `CreateTransaction` and the `SyncTransactionStatus` callers: for any reported status (including APPROVED) with at least one differing field the result is ERROR with `statusReason` `AMOUNT_MISMATCH`, Delivery CANCELLED, unchanged stock and an alert log naming the Reference and the differing fields; for a report that matches exactly, the reported status is applied as in Property 30. The webhook caller is covered by tasks 6.3 and 6.7.
     - _Requirements: 10.9, 10.10, 10.11, 21.15, 21.17_
-  - [ ] 4.14 Property test for provider acceptance on sync
+  - [x] 4.14 Property test for provider acceptance on sync
     - **Property 24: Provider acceptance updates the transaction according to its reported status (sync part)**
     - **Validates: Requirements 9.5**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over provider statuses returned to `GET /transactions/:id`: a PENDING status keeps PENDING, a Final_Status runs the Amount_Check and `FinalizeTransaction` before the response, and the stored result equals the result of the same status arriving on create (task 3.28). The create part of this property is task 3.28.
     - _Requirements: 9.5, 21.17_
-  - [ ] 4.15 Property test for the Single_Attempt_Profile at adapter level
+  - [x] 4.15 Property test for the Single_Attempt_Profile at adapter level
     - **Property 9: Provider resilience policy is profile-specific (Single_Attempt_Profile part)**
     - **Validates: Requirements 8.3, 9.3**
     - `fast-check` with `numRuns: 100` (adapter level, `nock` and fake timers, no HTTP) over simulated provider outcomes (success, not found, 4xx, 5xx, timeout): through the real `getStatus` and `findByReference`, exactly one request is made with a 3 s timeout and never a retry, regardless of the outcome; a "no record" answer is a successful `not_found`, not a retry trigger. The policy and Standard_Profile part of this property is task 2.11.
     - _Requirements: 8.3, 9.3, 21.15, 21.17_
-  - [ ] 4.16 Property test for fetching existing resources
+  - [x] 4.16 Property test for fetching existing resources
     - **Property 2: Fetching an existing resource returns it with its documented shape**
     - **Validates: Requirements 1.5, 3.9, 9.1, 9.9, 11.1**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over generated Products, Customers, Transactions and Deliveries behind the real controllers with in-memory fakes: `GET .../:id` answers 200 with exactly the documented field set, and the Transaction body never has `externalId`, a card token or card data beyond brand and last four.
     - _Requirements: 1.5, 3.9, 9.1, 9.9, 11.1, 21.17_
-  - [ ] 4.17 Property test for unknown ids
+  - [x] 4.17 Property test for unknown ids
     - **Property 3: An id that matches no record always yields the resource's not-found code**
     - **Validates: Requirements 1.6, 3.10, 9.2, 11.2**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over arbitrary id strings (valid ULIDs that do not exist, garbage, very long, unicode) for the four resources: 404 with that resource's code and never 500.
     - _Requirements: 1.6, 3.10, 9.2, 11.2, 21.17_
-  - [ ] 4.18 Property test for no throwing on business failures
+  - [x] 4.18 Property test for no throwing on business failures
     - **Property 42: Use cases and adapters never throw for business failures**
     - **Validates: Requirements 17.4**
-    - `fast-check` with `numRuns: 100` (use-case level with in-memory fakes, no HTTP). Table-driven over every non-webhook use case (`GetProducts`, `GetProduct`, `GetFees`, `UpsertCustomer`, `GetCustomer`, `GetAcceptanceTokens`, `CreateTransaction`, `SyncTransactionStatus`, `FinalizeTransaction`, `GetDelivery`) and every repository or gateway adapter, with inputs that trigger each documented business error: the call always resolves to `Err`, never a rejected promise or a thrown exception. `HandlePaymentEvent` is not part of this property: its no-throw rule is checked by the example tests of task 6.3.
+    - `fast-check` with `numRuns: 100` (use-case level with in-memory fakes, no HTTP). Table-driven over every non-webhook use case (`GetProducts`, `GetProduct`, `GetFees`, `UpsertCustomer`, `GetCustomer`, `GetAcceptanceTokens`, `CreateTransaction`, `SyncTransactionStatus`, `FinalizeTransaction`, `GetDelivery`) and every repository or gateway adapter, with inputs that trigger each documented business error: the call always resolves to `Err`, never a rejected promise or a thrown exception. `HandlePaymentEvent` is not part of this property: its no-throw rule is checked by the example tests of task 6.3. Exception for `CreateTransaction`: a Provider 4xx on the first creation attempt resolves to `Ok` with `statusCode` 502 and code `PAYMENT_PROVIDER_ERROR` (Requirements 6.6, 7.6), not to `Err`. The test asserts that the call resolves without throwing, that this outcome is `Ok` 502, and that a replay with the same Idempotency_Key returns the same status and body.
     - _Requirements: 17.4, 21.17, 21.18_
-  - [ ] 4.19 Checkpoint, `feat/HU-11-sync-deliveries`
+  - [x] 4.19 Checkpoint, `feat/HU-11-sync-deliveries`
     - Run `npm run lint`, `npx tsc --noEmit`, `npm test -- --coverage` (all four metrics at least 80), `npm run build`, `npm run depcruise`, `bash scripts/check-forbidden-words.sh` (no findings). No infra change in this branch.
     - Ensure all tests pass, ask the user if questions arise.
     - _Requirements: 17.6, 21.1_

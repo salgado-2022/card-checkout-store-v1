@@ -1,10 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { ok, ResultAsync, type Result } from 'neverthrow';
+import { errAsync, ok, ResultAsync, type Result } from 'neverthrow';
 import type { PaymentGatewayError } from '../../src/application/errors';
 import type {
+  AcceptanceTokens,
   PaymentCreateRequest,
   PaymentCreateResponse,
+  ProviderStatusReport,
+  ReconciliationOutcome,
 } from '../../src/application/ports/payment-gateway';
 import type { NewDelivery } from '../../src/application/ports/delivery-repository';
 import type {
@@ -14,6 +17,7 @@ import type {
 import type { Product } from '../../src/domain/entities';
 import { CreateTransaction } from '../../src/application/use-cases/create-transaction';
 import { FinalizeTransaction } from '../../src/application/use-cases/finalize-transaction';
+import { SyncTransactionStatus } from '../../src/application/use-cases/sync-transaction-status';
 import { TransactionsController } from '../../src/infrastructure/http/controllers/transactions.controller';
 import { ResultExceptionFilter } from '../../src/infrastructure/http/filters/result-exception.filter';
 import { GLOBAL_PREFIX } from '../../src/infrastructure/http/create-app';
@@ -154,6 +158,16 @@ export class RecordingGateway {
     this.requests.push(request);
     return new ResultAsync(Promise.resolve(this.reply(request)));
   }
+  // Reads are not part of the write path these specs cover; any call is an error by design.
+  getAcceptanceTokens(): ResultAsync<AcceptanceTokens, PaymentGatewayError> {
+    return errAsync({ kind: 'INVALID_RESPONSE', reason: 'not_scripted' });
+  }
+  getStatus(): ResultAsync<ProviderStatusReport, PaymentGatewayError> {
+    return errAsync({ kind: 'INVALID_RESPONSE', reason: 'not_scripted' });
+  }
+  findByReference(): ResultAsync<ReconciliationOutcome, PaymentGatewayError> {
+    return errAsync({ kind: 'INVALID_RESPONSE', reason: 'not_scripted' });
+  }
 }
 
 export interface RecordingTransactionsAppOptions {
@@ -215,9 +229,19 @@ export async function createRecordingTransactionsApp(
     appLogs,
   );
 
+  const syncTransactionStatus = new SyncTransactionStatus(
+    transactions,
+    gateway,
+    finalize,
+    appLogs,
+    clock,
+  );
   const moduleRef = await Test.createTestingModule({
     controllers: [TransactionsController],
-    providers: [{ provide: CreateTransaction, useValue: createTransaction }],
+    providers: [
+      { provide: CreateTransaction, useValue: createTransaction },
+      { provide: SyncTransactionStatus, useValue: syncTransactionStatus },
+    ],
   }).compile();
   const app = moduleRef.createNestApplication();
   app.setGlobalPrefix(GLOBAL_PREFIX);
