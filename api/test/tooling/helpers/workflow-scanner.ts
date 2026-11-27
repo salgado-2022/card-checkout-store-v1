@@ -24,6 +24,23 @@ export const CI_FORBIDDEN_RULES: readonly WorkflowRule[] = [
   { id: 'environment-key', pattern: /(?:^\s*(?:-\s+)?|[{,]\s*)["']?environment["']?\s*:/i },
 ];
 
+// Rule set for every workflow and script (Properties 13, Requirements 15.5, 15.6, 15.7,
+// 20.10, 21.5, 21.13). No destroy and no long-lived AWS credentials. Matching is case-insensitive
+// except for the AKIA access key format, which AWS issues in upper case only.
+export const NO_DESTROY_NO_KEYS_RULES: readonly WorkflowRule[] = [
+  { id: 'terraform-destroy', pattern: /terraform\s+destroy/i },
+  { id: 'destroy-flag', pattern: /-destroy/i },
+  { id: 'aws-access-key-id-input', pattern: /aws-access-key-id/i },
+  { id: 'aws-access-key-id-variable', pattern: /AWS_ACCESS_KEY_ID/i },
+  { id: 'aws-secret-access-key', pattern: /AWS_SECRET_ACCESS_KEY/i },
+  { id: 'long-lived-access-key', pattern: /AKIA[0-9A-Z]{16}/ },
+];
+
+// Rule applied only to deploy.yml: the workflow must not read secrets from `secrets.`.
+export const DEPLOY_ONLY_RULES: readonly WorkflowRule[] = [
+  { id: 'secrets-expression', pattern: /secrets\./i },
+];
+
 export function scanWorkflow(text: string, rules: readonly WorkflowRule[]): WorkflowViolation[] {
   const violations: WorkflowViolation[] = [];
   text.split(/\r?\n/).forEach((line, index) => {
