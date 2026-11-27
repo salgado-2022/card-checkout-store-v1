@@ -224,146 +224,146 @@ Conventions for every task:
 ### Branch `feat/HU-09-transactions`
 
 - [ ] 3. Create the transaction, charge the provider, idempotency, Amount_Check and finalization core
-  - [ ] 3.1 Integrity signature
+  - [x] 3.1 Integrity signature
     - Create `api/src/infrastructure/payment/integrity-signature.ts`: `computeIntegritySignature(reference, amountInCents, currency, secret)` returns `sha256hex(reference + amountInCents + currency + secret)` with `node:crypto`.
     - Tests with a fixed known vector (fake reference, amount, currency and secret, expected hex computed independently and written as a literal), plus a changed field changes the hash.
     - _Requirements: 7.2, 21.3_
-  - [ ] 3.2 Canonical JSON and Request_Hash
+  - [x] 3.2 Canonical JSON and Request_Hash
     - Create `api/src/application/request-hash.ts` (uses only `node:crypto`): `canonicalJson(value)` sorts object keys recursively and keeps array order; `requestHash(body)` returns the SHA-256 hex of the canonical form.
     - Tests: key order independence at several depths, array order matters, different values give different hashes, known vector.
     - _Requirements: 6.3, 6.13_
-  - [ ] 3.3 DynamoDB idempotency repository adapter
+  - [x] 3.3 DynamoDB idempotency repository adapter
     - Suggested executor: senior.
     - Create `api/src/infrastructure/persistence/idempotency.repository.dynamodb.ts`: `begin` does a conditional put (`attribute_not_exists(#key)`) with state IN_PROGRESS, `requestHash`, `createdAt` and `expiresAt` 24 h ahead as epoch seconds (the table TTL attribute); on `ConditionalCheckFailedException` it reads the record (strongly consistent) and returns `hash_mismatch`, `in_progress_fresh`, `in_progress_stale { transactionId | null }` (age against the 25 s Lambda timeout using the injected `Clock`) or `completed { statusCode, body }`; `attachTransactionId`, `complete` (state COMPLETED, stored status and body), `release` (delete) and `takeOver` (conditional update on the previous `createdAt`, returning `taken` or `lost_race`).
     - Tests with `aws-sdk-client-mock`: every `BeginOutcome` branch, TTL value, takeover race, SDK failure becomes `Err`.
     - _Requirements: 6.3, 6.4, 6.5, 6.6, 6.8, 6.9, 6.10, 6.11, 6.12, 17.8, 17.9_
-  - [ ] 3.4 DynamoDB delivery repository adapter
+  - [x] 3.4 DynamoDB delivery repository adapter
     - Create `api/src/infrastructure/persistence/delivery.repository.dynamodb.ts`: `create` (conditional put on `attribute_not_exists(id)`, status PENDING, snapshot of the recipient fields, `transactionId` supplied by the caller from an id generated before both writes) and `findById` (`Ok(null)` when missing). SDK failures become `Err`.
     - Tests with `aws-sdk-client-mock`: create shape, optional fields omitted, find, not found, SDK failure.
     - _Requirements: 5.11, 11.1, 17.8, 17.9_
-  - [ ] 3.5 DynamoDB transaction repository adapter (reads and simple writes)
+  - [x] 3.5 DynamoDB transaction repository adapter (reads and simple writes)
     - Create `api/src/infrastructure/persistence/transaction.repository.dynamodb.ts` with `create` (PENDING, snapshot of `unitPriceInCents`, amounts, `currency`, `installments`, `cardBrand`, `cardLastFour`, `productId`, `quantity`, `customerId`, `deliveryId`; never a card token, number, CVC or expiry), `findById`, `findByReference` (`QueryCommand` on the GSI `reference`), `setExternalId`, `setLastSynced`. `finalize` is added in 3.7.
     - Tests with `aws-sdk-client-mock`: stored item has no card data keys, GSI query shape, each write's expression, SDK failure.
     - _Requirements: 5.11, 5.12, 5.13, 8.3, 9.1, 17.8, 17.9_
-  - [ ] 3.6 Domain function `amount-check.ts`
+  - [x] 3.6 Domain function `amount-check.ts`
     - Create `api/src/domain/amount-check.ts`: `checkAmount(reported: { amountInCents: number; currency: string; reference: string }, stored: { totalInCents: number; currency: string; reference: string }): AmountCheckResult` where `AmountCheckResult = { kind: 'match' } | { kind: 'mismatch'; fields: Array<'amountInCents' | 'currency' | 'reference'> }`. Pure strict equality on the three fields, no I/O, no framework import, field names listed in a fixed order.
     - Plain Jest tests, no mocks, 100% coverage of the file: all three fields equal gives `match`; each field differing alone gives a `mismatch` naming only that field; two and three fields differing give the exact list; a currency that differs only in letter case is a mismatch; an amount that differs by one cent is a mismatch.
     - _Requirements: 10.9, 10.10, 10.11, 17.1_
-  - [ ] 3.7 Transaction finalization adapter and FinalizeTransaction use case with Amount_Check
+  - [x] 3.7 Transaction finalization adapter and FinalizeTransaction use case with Amount_Check
     - Suggested executor: senior.
     - Add `finalize` to the transaction repository: one `TransactWriteItemsCommand` that updates the Transaction (`status`, `statusReason`, `finalizedAt`, `updatedAt`) on `status = PENDING`, updates the Delivery (ASSIGNED, BACKORDER or CANCELLED) on `status = PENDING` and, for APPROVED, updates the Product `stock = stock - :quantity` on `stock >= :quantity`. Read `CancellationReasons` item by item: Transaction condition failed means already finalized (re-read and return the stored state); Product condition failed means no stock (retry once as BACKORDER, Transaction APPROVED, Delivery BACKORDER, stock untouched).
     - Create `finalize-transaction.ts` with an input of the stored Transaction and an outcome `{ status, message, report? }`, where `report` holds the provider-reported `amountInCents`, `currency` and `reference`. Steps: if the transaction is not PENDING return `Ok(stored)` with no write and no Amount_Check; when `report` is present run `checkAmount` against the stored values before any write, and on a mismatch finalize as ERROR with `statusReason` `AMOUNT_MISMATCH`, Delivery CANCELLED and stock unchanged, even when the provider reported APPROVED, writing an `alert` log with the Reference and the names of the fields that differ; on a match finalize with the reported status; an internal finalization without `report` (a provider rejection, `PROVIDER_UNREACHABLE`) skips the Amount_Check. On the BACKORDER outcome write an `alert` log with the Reference and the product id. Use `canTransitionTransaction` and `canTransitionDelivery` before writing. All three callers (create, sync, webhook) use this one use case, so none can finalize a reported status without the check.
     - Tests: adapter with `aws-sdk-client-mock` (APPROVED, declined family, stock condition failed, transaction condition failed, other cancellation, SDK failure); use case with fakes (no-op on a final transaction, alert log on BACKORDER, Amount_Check match, mismatch on each field overriding APPROVED and DECLINED, alert log fields, no check when `report` is absent).
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9, 10.10, 10.11, 17.3, 17.4_
-  - [ ] 3.8 Payment gateway adapter: create
+  - [x] 3.8 Payment gateway adapter: create
     - Suggested executor: senior.
     - In `payment-gateway.adapter.ts` implement `create` under `withStandardProfile`: `POST {PAYMENT_API_URL}/transactions` with the private key, body `amount_in_cents`, `currency` "COP", `customer_email`, `reference`, `acceptance_token`, `accept_personal_auth`, `payment_method { type: "CARD", token, installments }` and `signature` from 3.1; map the provider id, status, message, amount, currency and reference to `{ externalId, status, message, amountInCents, currency, reference }`; a 4xx gives `REJECTED` with the provider message and `afterTransientFailure`; timeout or 5xx after the retry gives `UNAVAILABLE`. The adapter never sends a creation request from any other method. Never log or return the private key, the integrity secret, the card token or response bodies.
     - Tests with `nock` and `aws-sdk-client-mock` (SSM): exact request body and the signature, success PENDING and final status, 4xx, 5xx then 4xx flags `afterTransientFailure`, 5xx twice, secrets absent from every error value and log line.
     - _Requirements: 7.1, 7.2, 7.3, 7.6, 7.7, 7.8, 7.9, 8.1, 8.2_
-  - [ ] 3.9 CreateTransaction: idempotency gate, validation and PENDING persistence
+  - [x] 3.9 CreateTransaction: idempotency gate, validation and PENDING persistence
     - Suggested executor: senior.
     - Create `api/src/application/use-cases/create-transaction.ts`, steps 1–10 of the design: missing or empty key gives `MISSING_IDEMPOTENCY_KEY`, malformed key gives `VALIDATION_ERROR`; `requestHash`; `begin` and each `BeginOutcome` (`hash_mismatch` → `IDEMPOTENCY_KEY_REUSED`, `in_progress_fresh` → `IDEMPOTENCY_KEY_IN_PROGRESS`, `completed` → replay with 201 replaced by 200, `in_progress_stale` with a transaction id → load it and return 200 with its current state, without one → `takeOver` and retry `begin` once on `lost_race`); product exists, customer exists, `stock >= quantity` (`INSUFFICIENT_STOCK` states the available units); on any of these failures call `release` and return the `Err`; `computeAmounts` from the configured fees; generate the Transaction id first, create the Delivery PENDING carrying that `transactionId`, then create the Transaction PENDING with the same id, the `deliveryId` and a new `ORD-<ULID>` Reference; `attachTransactionId` before any provider call. Keep the card token only in the in-memory request object.
     - Tests with fakes and the fake clock for every branch above, including that nothing is written before a failed validation and that stock is unchanged.
     - _Requirements: 5.6, 5.7, 5.8, 5.9, 5.11, 5.12, 5.13, 5.15, 6.1, 6.2, 6.3, 6.4, 6.5, 6.7, 6.8, 6.9, 6.10, 6.11, 17.3, 17.4_
-  - [ ] 3.10 CreateTransaction: provider outcomes and response
+  - [x] 3.10 CreateTransaction: provider outcomes and response
     - Suggested executor: senior.
     - Extend `create-transaction.ts`, steps 11–14: call `PaymentGateway.create` exactly once per Reference (the adapter performs the single retry inside the Standard_Profile); on success store the External_Id; a PENDING status answers 201 PENDING; a final status runs `FinalizeTransaction` with the provider-reported amount, currency and reference (Amount_Check included) before the response and answers 201 with the resulting status, which is ERROR with reason `AMOUNT_MISMATCH` on a mismatch. `REJECTED` without a prior transient failure sets the Transaction ERROR with the provider message as `statusReason` through `FinalizeTransaction`, cancels the Delivery, leaves stock unchanged and returns `PAYMENT_PROVIDER_ERROR`. `REJECTED` with `afterTransientFailure` (a 4xx on the retry after a timeout or 5xx on the first attempt) and `UNAVAILABLE` (timeout or 5xx on both attempts) both keep the Transaction and the Delivery PENDING without External_Id, run no Reconciliation (`findByReference` is never called here), send no further provider request in the request and answer 201 PENDING. Always `complete` the idempotency record with the HTTP status and the exact response body (also for the 502 case). Build the 201 body from `id`, `reference`, `status`, `amounts`, `deliveryId`, `card { brand, lastFour }`, `createdAt` only.
     - Tests with the fake gateway: PENDING, APPROVED and DECLINED on create; an APPROVED report with a different amount, currency or reference ends ERROR `AMOUNT_MISMATCH` with the Delivery CANCELLED, stock unchanged and an alert log; first-attempt 4xx gives 502 and ERROR; 5xx then 4xx gives 201 PENDING, no External_Id, Delivery PENDING and zero `findByReference` calls; 5xx twice gives 201 PENDING; the gateway `create` is called at most once per Reference; the stored response equals the returned body.
     - _Requirements: 5.14, 6.6, 7.3, 7.4, 7.5, 7.6, 7.7, 8.1, 8.2, 10.9, 17.3, 17.4, 21.15_
-  - [ ] 3.11 Transactions DTOs, controller and wiring
+  - [x] 3.11 Transactions DTOs, controller and wiring
     - Create `create-transaction.dto.ts` with nested `DeliveryDto` and `PaymentDto`: `productId`, `quantity` 1–5 integer, `customerId`, `delivery { recipientName 3–80, phone ^3\d{9}$, addressLine1 5–120, addressLine2? ≤60, city 2–60, department in the 32 departments or Bogotá D.C., postalCode? 6 digits }`, `payment { cardToken, installments 1–36, brand VISA|MASTERCARD, lastFour 4 digits }`, `acceptanceToken`, `acceptPersonalAuth`; swagger decorators including the `Idempotency-Key` header and the status codes 201, 200, 400, 404, 409, 415, 422, 429, 502. Create `TransactionsController.create` (reads the header, passes it straight to the use case, answers with the status chosen by the use case, 201 or 200). Register in `app.module.ts`.
     - supertest tests with the fake application layer: 201 body has exactly the documented fields, 200 on replay, each invalid field gives 400 `VALIDATION_ERROR` with `details`, unknown or amount property rejected, missing key 400 `MISSING_IDEMPOTENCY_KEY`, 404/409/422/502 mapping, response never contains the card token.
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.14, 6.1, 6.2, 6.7, 13.9, 14.6, 18.1_
-  - [ ] 3.12 Terraform: Lambda timeout and origin read timeout
+  - [x] 3.12 Terraform: Lambda timeout and origin read timeout
     - `infra/lambda.tf`: `timeout = 25` (was 15). `infra/cloudfront.tf`: set `origin_read_timeout = 30` in the Lambda origin `custom_origin_config` (keep every other field). Update the foundation tests and docs that mention the 15 s timeout (`api/test/infra/terraform-static.spec.ts`, `docs/deployment.md`, `infra/README.md`) and add static assertions that the Lambda timeout is 25 and the origin read timeout is 30, above it, and that the Lambda `environment` block keeps exactly the variable names of the tech rules with no new name.
     - Run `terraform fmt` on the edited files.
     - _Requirements: 19.1, 19.2, 19.6, 19.7_
-  - [ ] 3.13 Property test for the integrity signature formula
+  - [x] 3.13 Property test for the integrity signature formula
     - **Property 23: Integrity signature and event checksum match their formulas (integrity signature part)**
     - **Validates: Requirements 7.2, 21.3**
     - `fast-check` with `numRuns: 100` (pure function) over `(reference, amount, currency, secret)` tuples: `computeIntegritySignature` equals an independently written `sha256hex` of the concatenation; the fixed known vector stays as an example. The event checksum part of this property is task 6.5.
     - _Requirements: 7.2, 21.3, 21.17_
-  - [ ] 3.14 Property test for request-hash canonicalization
+  - [x] 3.14 Property test for request-hash canonicalization
     - **Property 22: Request-hash canonicalization is key-order independent**
     - **Validates: Requirements 6.13, 21.11**
     - `fast-check` with `numRuns: 100` (pure function) over random JSON objects and random key permutations at every depth: identical hash.
     - _Requirements: 6.13, 21.11, 21.17_
-  - [ ] 3.15 Property test for field-level validation
+  - [x] 3.15 Property test for field-level validation
     - **Property 7: Field-level validation rejects out-of-rule values and names the field**
     - **Validates: Requirements 3.4, 3.5, 3.6, 3.7, 3.8, 5.2, 5.3, 5.4, 6.2, 13.7**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) generates a valid body for `POST /customers` and `POST /transactions` and breaks exactly one field with a value outside its rule (including the Idempotency-Key charset and length): 400 `VALIDATION_ERROR` with a `details` entry naming that field and rule, and no write.
     - _Requirements: 3.4, 3.5, 3.6, 3.7, 3.8, 5.2, 5.3, 5.4, 6.2, 13.7, 21.17_
-  - [ ] 3.16 Property test for unknown properties on transactions
+  - [x] 3.16 Property test for unknown properties on transactions
     - **Property 8: Unknown or malformed request bodies are rejected on customers and transactions (transactions part)**
     - **Validates: Requirements 5.5, 14.6**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) adds an undeclared property (including `amount`-shaped names such as `totalInCents` or `amount`) to valid `POST /transactions` bodies, at the top level and inside `delivery` and `payment`: 400 `VALIDATION_ERROR` and no write, no idempotency record kept. The customers part of this property is task 2.10.
     - _Requirements: 5.5, 14.6, 21.17, 21.18_
-  - [ ] 3.17 Property test for insufficient stock
+  - [x] 3.17 Property test for insufficient stock
     - **Property 10: Insufficient stock blocks transaction creation without side effects**
     - **Validates: Requirements 5.8**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over `stock < quantity`: 409 `INSUFFICIENT_STOCK` naming the available units, no Transaction, no Delivery, no gateway call, the idempotency record released.
     - _Requirements: 5.8, 6.11, 21.17_
-  - [ ] 3.18 Property test for referential validation
+  - [x] 3.18 Property test for referential validation
     - **Property 11: Referential validation gates transaction creation**
     - **Validates: Requirements 5.6, 5.7**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over unknown product ids and unknown customer ids: 404 `PRODUCT_NOT_FOUND` or `CUSTOMER_NOT_FOUND` before any amount is computed or any record written.
     - _Requirements: 5.6, 5.7, 21.17_
-  - [ ] 3.19 Property test for persistence order
+  - [x] 3.19 Property test for persistence order
     - **Property 13: PENDING persistence happens before any Provider call**
     - **Validates: Requirements 5.11, 6.3, 6.8**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). With the recording fakes, for any valid request the call log shows idempotency `begin`, Delivery create, Transaction create and `attachTransactionId`, all strictly before `PaymentGateway.create`, with a fresh Reference.
     - _Requirements: 5.11, 6.3, 6.8, 21.17_
-  - [ ] 3.20 Property test for card data and secrets
+  - [x] 3.20 Property test for card data and secrets
     - **Property 14: Created transactions never retain card data or secrets**
     - **Validates: Requirements 5.13, 7.9**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). For any valid request with generated token and secret values, serialize every stored item, every response body and every log line captured during processing and assert none contains the card token, number, CVC, expiry, private key, integrity secret or events secret.
     - _Requirements: 5.13, 7.9, 21.17_
-  - [ ] 3.21 Property test for stock on non-final transactions
+  - [x] 3.21 Property test for stock on non-final transactions
     - **Property 15: Stock is unchanged for any non-final transaction**
     - **Validates: Requirements 5.15**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). For any create that ends PENDING (provider PENDING, unreachable, or a 4xx on the retry), the Product stock before and after is identical.
     - _Requirements: 5.15, 21.17_
-  - [ ] 3.22 Property test for the idempotency key format
+  - [x] 3.22 Property test for the idempotency key format
     - **Property 16: Idempotency key format is enforced**
     - **Validates: Requirements 6.1**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over absent, empty and whitespace-only keys: 400 `MISSING_IDEMPOTENCY_KEY` and no write. The malformed-key case is covered by Property 7.
     - _Requirements: 6.1, 21.17_
-  - [ ] 3.23 Property test for idempotent replay
+  - [x] 3.23 Property test for idempotent replay
     - **Property 17: Idempotent replay produces exactly one transaction and one Provider call**
     - **Validates: Requirements 6.6, 6.7, 21.4**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). For any valid key and body, two sequential requests give one Transaction, one `PaymentGateway.create` call, and the second response equals the first with 201 replayed as 200.
     - _Requirements: 6.6, 6.7, 21.4, 21.17_
-  - [ ] 3.24 Property test for a reused key with a different body
+  - [x] 3.24 Property test for a reused key with a different body
     - **Property 18: A different body under a reused key is rejected**
     - **Validates: Requirements 6.4**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). For any key already completed or in progress, a body that canonicalizes differently gives 422 `IDEMPOTENCY_KEY_REUSED` and no new Transaction.
     - _Requirements: 6.4, 21.4, 21.17_
-  - [ ] 3.25 Property test for concurrent identical requests
+  - [x] 3.25 Property test for concurrent identical requests
     - **Property 19: A concurrent identical request is rejected while in progress**
     - **Validates: Requirements 6.5**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). With the fake clock under 25 s and an IN_PROGRESS record, the same key and body give 409 `IDEMPOTENCY_KEY_IN_PROGRESS` and zero gateway calls.
     - _Requirements: 6.5, 21.4, 21.17_
-  - [ ] 3.26 Property test for stale in-progress records
+  - [x] 3.26 Property test for stale in-progress records
     - **Property 20: Stale in-progress records recover without duplicating work**
     - **Validates: Requirements 6.9, 6.10**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). Advance the fake clock beyond 25 s: with a transaction id the repeat answers 200 with that transaction and writes nothing; without one the record is taken over and processed exactly once, also when two requests race for the takeover.
     - _Requirements: 6.9, 6.10, 21.17_
-  - [ ] 3.27 Property test for key release
+  - [x] 3.27 Property test for key release
     - **Property 21: Pre-write failures leave the idempotency key reusable**
     - **Validates: Requirements 6.11**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). For any business error before the PENDING Transaction exists, the record is deleted and the next request with the same key is processed as new; after the Delivery is written the record is never released.
     - _Requirements: 6.11, 21.17_
-  - [ ] 3.28 Property test for provider acceptance on create
+  - [x] 3.28 Property test for provider acceptance on create
     - **Property 24: Provider acceptance updates the transaction according to its reported status (create part)**
     - **Validates: Requirements 7.3, 7.4, 7.5**
     - `fast-check` with `numRuns: 25` (HTTP, supertest) over accepted provider create responses: a PENDING status records the External_Id and answers 201 PENDING; a Final_Status runs the Amount_Check and `FinalizeTransaction` before the response and the response carries the resulting status (APPROVED decrements stock once, the declined family leaves it unchanged). The sync part of this property is task 4.14.
     - _Requirements: 7.3, 7.4, 7.5, 21.17_
-  - [ ] 3.29 Property test for non-retryable provider failure
+  - [x] 3.29 Property test for non-retryable provider failure
     - **Property 25: A 4xx on the first attempt marks the transaction ERROR; a 4xx on the retry after an unreachable first attempt stays PENDING for later reconciliation**
     - **Validates: Requirements 7.6, 7.7, 8.1, 8.2**
     - `fast-check` with `numRuns: 25` (HTTP, supertest). A first-attempt 4xx gives Transaction ERROR with the provider message as `statusReason`, Delivery CANCELLED, stock unchanged and 502 `PAYMENT_PROVIDER_ERROR`. A first attempt that times out or returns 5xx followed by a retry 4xx gives 201 PENDING: no External_Id, Delivery PENDING, zero `findByReference` calls and no further gateway call in the request (Requirement 21.15 case). A timeout or 5xx on both attempts gives the same 201 PENDING.
     - _Requirements: 7.6, 7.7, 8.1, 8.2, 21.6, 21.15, 21.17_
-  - [ ] 3.30 Checkpoint, `feat/HU-09-transactions`
+  - [x] 3.30 Checkpoint, `feat/HU-09-transactions`
     - Run `npm run lint`, `npx tsc --noEmit`, `npm test -- --coverage` (all four metrics at least 80), `npm run build`, `npm run depcruise`, `bash scripts/check-forbidden-words.sh` (no findings). Run `terraform fmt -check -recursive`, `terraform init -backend=false` and `terraform validate` in `infra/`. Do not run `terraform plan` or `terraform apply`.
     - Ensure all tests pass, ask the user if questions arise.
     - _Requirements: 17.6, 19.6, 21.1_
