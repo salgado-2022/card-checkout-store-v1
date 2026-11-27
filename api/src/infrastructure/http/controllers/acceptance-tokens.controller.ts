@@ -5,6 +5,7 @@ import {
   ApiOkResponse,
   ApiResponse,
   ApiTags,
+  ApiTooManyRequestsResponse,
 } from '@nestjs/swagger';
 import type { AcceptanceTokens } from '../../../application/ports/payment-gateway';
 import { GetAcceptanceTokens } from '../../../application/use-cases/get-acceptance-tokens';
@@ -35,6 +36,7 @@ export class AcceptanceTokensController {
   constructor(private readonly getAcceptanceTokens: GetAcceptanceTokens) {}
 
   @Get()
+  @ApiTooManyRequestsResponse({ type: ErrorEnvelopeDto, description: 'TOO_MANY_REQUESTS' })
   @ApiOkResponse({ type: AcceptanceTokensResponseDto })
   @ApiResponse({
     status: HTTP_BAD_GATEWAY,

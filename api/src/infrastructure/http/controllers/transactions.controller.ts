@@ -9,6 +9,7 @@ import {
   ApiResponse,
   ApiTags,
   ApiUnprocessableEntityResponse,
+  ApiTooManyRequestsResponse,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { isUlid } from '../../../domain/ulid';
@@ -84,6 +85,7 @@ export class TransactionsController {
   }
 
   @Get(':id')
+  @ApiTooManyRequestsResponse({ type: ErrorEnvelopeDto, description: 'TOO_MANY_REQUESTS' })
   @ApiOkResponse({
     type: TransactionDetailResponseDto,
     description: 'Current state of the Transaction.',

@@ -8,6 +8,7 @@ import {
   ApiOkResponse,
   ApiResponse,
   ApiTags,
+  ApiTooManyRequestsResponse,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { Customer } from '../../../domain/entities';
@@ -45,6 +46,7 @@ export class CustomersController {
   ) {}
 
   @Post()
+  @ApiTooManyRequestsResponse({ type: ErrorEnvelopeDto, description: 'TOO_MANY_REQUESTS' })
   @ApiCreatedResponse({ type: CustomerResponseDto, description: 'Customer created.' })
   @ApiOkResponse({ type: CustomerResponseDto, description: 'Existing customer updated.' })
   @ApiBadRequestResponse({ type: ErrorEnvelopeDto, description: 'VALIDATION_ERROR' })
@@ -64,6 +66,7 @@ export class CustomersController {
   }
 
   @Get(':id')
+  @ApiTooManyRequestsResponse({ type: ErrorEnvelopeDto, description: 'TOO_MANY_REQUESTS' })
   @ApiOkResponse({ type: CustomerResponseDto })
   @ApiNotFoundResponse({ type: ErrorEnvelopeDto, description: 'CUSTOMER_NOT_FOUND' })
   @ApiForbiddenResponse({ type: ErrorEnvelopeDto, description: 'FORBIDDEN_ORIGIN' })

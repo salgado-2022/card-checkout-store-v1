@@ -1,5 +1,10 @@
 import { Controller, Get, Param } from '@nestjs/common';
-import { ApiNotFoundResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiTooManyRequestsResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { GetProduct } from '../../../application/use-cases/get-product';
 import { GetProducts } from '../../../application/use-cases/get-products';
 import { toHttpException } from '../error-catalog';
@@ -16,6 +21,7 @@ export class ProductsController {
   ) {}
 
   @Get()
+  @ApiTooManyRequestsResponse({ type: ErrorEnvelopeDto, description: 'TOO_MANY_REQUESTS' })
   @ApiOkResponse({ type: ProductResponseDto, isArray: true })
   async list(): Promise<ProductResponseDto[]> {
     const result = await this.getProducts.execute();
@@ -26,6 +32,7 @@ export class ProductsController {
   }
 
   @Get(':id')
+  @ApiTooManyRequestsResponse({ type: ErrorEnvelopeDto, description: 'TOO_MANY_REQUESTS' })
   @ApiOkResponse({ type: ProductResponseDto })
   @ApiNotFoundResponse({ type: ErrorEnvelopeDto, description: 'PRODUCT_NOT_FOUND' })
   async detail(@Param('id') id: string): Promise<ProductResponseDto> {
