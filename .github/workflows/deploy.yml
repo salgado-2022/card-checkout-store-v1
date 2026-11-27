@@ -171,11 +171,14 @@ jobs:
         with:
           ref: ${{ env.DEPLOY_SHA }}
           persist-credentials: false
+      # The API docs site is built with the api/ toolchain, so both lockfiles are cached.
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            api/package-lock.json
       # Only public values reach the web bundle.
       - name: Build web
         run: npm ci && npm run build
@@ -184,6 +187,10 @@ jobs:
           VITE_API_BASE: /api/v1
           VITE_PAYMENT_API_URL: ${{ vars.PAYMENT_API_URL }}
           VITE_PAYMENT_PUBLIC_KEY: ${{ vars.PAYMENT_PUBLIC_KEY }}
+      # Generates docs/site/ from docs/openapi.json. Runs before the credentials step.
+      - name: Build API docs site
+        run: npm ci && npm run docs:site
+        working-directory: api
       # Credentials are loaded after the build, so npm scripts never see AWS credentials.
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
@@ -191,15 +198,26 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 3600
       # Hashed assets are immutable; index.html is revalidated on every request.
-      - name: Upload web build and invalidate CloudFront
+      # The web sync excludes docs/* so that --delete never removes the published docs.
+      - name: Upload web build
         env:
           WEB_BUCKET_NAME: ${{ needs.apply.outputs.web_bucket_name }}
-          DISTRIBUTION_ID: ${{ needs.apply.outputs.distribution_id }}
         run: |
-          aws s3 sync web/dist "s3://$WEB_BUCKET_NAME" --delete --exclude index.html \
+          aws s3 sync web/dist "s3://$WEB_BUCKET_NAME" --delete --exclude index.html --exclude "docs/*" \
             --cache-control "public, max-age=31536000, immutable"
           aws s3 cp web/dist/index.html "s3://$WEB_BUCKET_NAME/index.html" --cache-control "no-cache"
-          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*"
+      # openapi.json is copied separately with no-cache so a new spec is never served stale.
+      - name: Publish API docs
+        env:
+          WEB_BUCKET_NAME: ${{ needs.apply.outputs.web_bucket_name }}
+        run: |
+          aws s3 sync docs/site "s3://$WEB_BUCKET_NAME/docs" --delete
+          aws s3 cp docs/site/openapi.json "s3://$WEB_BUCKET_NAME/docs/openapi.json" --cache-control no-cache --content-type application/json
+      # Runs last, after every upload. "/*" already covers "/docs/*"; it is listed for clarity.
+      - name: Invalidate CloudFront
+        env:
+          DISTRIBUTION_ID: ${{ needs.apply.outputs.distribution_id }}
+        run: aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" "/docs/*"
   smoke-test:
     needs: [apply, deploy-web]
     runs-on: ubuntu-latest

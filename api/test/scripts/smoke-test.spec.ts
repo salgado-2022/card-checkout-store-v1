@@ -10,6 +10,7 @@ import * as fc from 'fast-check';
 const SCRIPT_PATH = path.resolve(__dirname, '../../../scripts/smoke-test.sh');
 const MAX_ATTEMPTS = 5;
 const HEALTH_BODY = '{"status":"ok"}';
+const DOCS_IMG_SRC = "img-src 'self' data:";
 const REQUIRED_HEADERS = [
   'strict-transport-security',
   'content-security-policy',
@@ -18,32 +19,49 @@ const REQUIRED_HEADERS = [
   'referrer-policy',
   'permissions-policy',
 ];
+// The web policy has no data: images. The docs policy differs only in img-src.
+const WEB_CSP = "default-src 'self'; img-src 'self'";
+const DOCS_CSP = "default-src 'self'; img-src 'self' data:";
+const CSP_VALUES = [
+  WEB_CSP,
+  DOCS_CSP,
+  "default-src 'self'; img-src 'self' data:x",
+  "default-src 'self'; img-src 'self' data :",
+  "img-src 'self'",
+];
+
+type CheckKind = 'page' | 'plain' | 'health' | 'docs';
+type PlanKey = 'root' | 'health' | 'docs' | 'openapi';
 
 interface Check {
   name: string;
   path: string;
+  kind: CheckKind;
+  plan: PlanKey;
 }
 
-const ROOT: Check = { name: 'GET /', path: '/' };
-const HEALTH: Check = { name: 'GET /api/v1/health', path: '/api/v1/health' };
+// Same order as scripts/smoke-test.sh.
+const CHECKS: readonly Check[] = [
+  { name: 'GET /', path: '/', kind: 'page', plan: 'root' },
+  { name: 'GET /api/v1/health', path: '/api/v1/health', kind: 'health', plan: 'health' },
+  { name: 'GET /docs/', path: '/docs/', kind: 'docs', plan: 'docs' },
+  { name: 'GET /docs/openapi.json', path: '/docs/openapi.json', kind: 'plain', plan: 'openapi' },
+];
 
 /**
  * Number of fast-check runs for the main property. Each run starts one bash
- * process and up to ten curl processes against a local server (about 50 ms in
- * total), so 100 runs keep the property well under 30 seconds.
+ * process and up to twenty curl processes against a local server, so 100 runs
+ * stay well under the test timeout.
  */
 const NUM_RUNS = 100;
 
 interface FakeResponse {
   status: number;
-  headerNames: string[];
+  headers: Record<string, string>;
   body: string;
 }
 
-interface Plan {
-  root: FakeResponse[];
-  health: FakeResponse[];
-}
+type Plan = Record<PlanKey, FakeResponse[]>;
 
 interface Outcome {
   ok: boolean;
@@ -63,7 +81,7 @@ interface PlanRun extends ScriptResult {
   leftovers: string[];
 }
 
-let currentPlan: Plan = { root: [], health: [] };
+let currentPlan: Plan = {} as Plan;
 let received: Record<string, number> = {};
 let originVerifySeen = false;
 let baseUrl = '';
@@ -71,7 +89,7 @@ let server: https.Server;
 let certDir = '';
 let caCertPath = '';
 
-/** Mirrors the script rule: the last attempt index is repeated when the list is exhausted. */
+/** Mirrors the script rule: the last response is repeated when the list is exhausted. */
 function responseAt(responses: FakeResponse[], attempt: number): FakeResponse {
   return responses[Math.min(attempt, responses.length - 1)];
 }
@@ -81,23 +99,29 @@ function isPass(response: FakeResponse, check: Check): boolean {
   if (response.status !== 200) {
     return false;
   }
-  const names = response.headerNames.map((name) => name.toLowerCase());
-  if (!REQUIRED_HEADERS.every((header) => names.includes(header))) {
+  const headers = new Map(
+    Object.entries(response.headers).map(([name, value]) => [name.toLowerCase(), value]),
+  );
+  if (!REQUIRED_HEADERS.every((header) => headers.has(header))) {
     return false;
   }
-  // Command substitution in bash strips trailing newlines before comparing.
-  return check.path !== HEALTH.path || response.body.replace(/\n+$/, '') === HEALTH_BODY;
+  if (check.kind === 'docs') {
+    return (headers.get('content-security-policy') ?? '').includes(DOCS_IMG_SRC);
+  }
+  if (check.kind === 'health') {
+    // Command substitution in bash strips trailing newlines before comparing.
+    return response.body.replace(/\n+$/, '') === HEALTH_BODY;
+  }
+  return true;
 }
 
 /** Expected result of the whole script for a plan, including the requests each path receives. */
 function expectedOutcome(plan: Plan): Outcome {
-  const requests: Record<string, number> = { [ROOT.path]: 0, [HEALTH.path]: 0 };
-  const steps: [Check, FakeResponse[]][] = [
-    [ROOT, plan.root],
-    [HEALTH, plan.health],
-  ];
-
-  for (const [check, responses] of steps) {
+  const requests: Record<string, number> = Object.fromEntries(
+    CHECKS.map((check) => [check.path, 0]),
+  );
+  for (const check of CHECKS) {
+    const responses = plan[check.plan];
     let passed = false;
     for (let attempt = 0; attempt < MAX_ATTEMPTS && !passed; attempt++) {
       requests[check.path] += 1;
@@ -110,19 +134,18 @@ function expectedOutcome(plan: Plan): Outcome {
   return { ok: true, failedCheck: undefined, requests };
 }
 
+function requestCounts(): Record<string, number> {
+  return Object.fromEntries(CHECKS.map((check) => [check.path, received[check.path] ?? 0]));
+}
+
 function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
   if (req.headers['x-origin-verify'] !== undefined) {
     originVerifySeen = true;
   }
 
   const url = req.url ?? '';
-  let responses: FakeResponse[] | undefined;
-  if (url === ROOT.path) {
-    responses = currentPlan.root;
-  } else if (url === HEALTH.path) {
-    responses = currentPlan.health;
-  }
-  if (!responses) {
+  const check = CHECKS.find((candidate) => candidate.path === url);
+  if (check === undefined) {
     res.writeHead(404);
     res.end();
     return;
@@ -130,13 +153,8 @@ function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): voi
 
   const attempt = received[url] ?? 0;
   received[url] = attempt + 1;
-  const response = responseAt(responses, attempt);
-
-  const headers: Record<string, string> = { 'content-type': 'text/plain' };
-  for (const name of response.headerNames) {
-    headers[name] = '1';
-  }
-  res.writeHead(response.status, headers);
+  const response = responseAt(currentPlan[check.plan], attempt);
+  res.writeHead(response.status, response.headers);
   res.end(response.body);
 }
 
@@ -182,10 +200,7 @@ async function runPlan(plan: Plan): Promise<PlanRun> {
     const result = await runScript([baseUrl], { cwd: workDir });
     return {
       ...result,
-      requests: {
-        [ROOT.path]: received[ROOT.path] ?? 0,
-        [HEALTH.path]: received[HEALTH.path] ?? 0,
-      },
+      requests: requestCounts(),
       originVerifySeen,
       leftovers: fs.readdirSync(workDir),
     };
@@ -194,15 +209,38 @@ async function runPlan(plan: Plan): Promise<PlanRun> {
   }
 }
 
+/** Plan in which every check passes on the first attempt. Tests override only what they need. */
+function passingPlan(overrides: Partial<Plan> = {}): Plan {
+  return {
+    root: [successfulResponse],
+    health: [successfulResponse],
+    docs: [successfulDocsResponse],
+    openapi: [successfulResponse],
+    ...overrides,
+  };
+}
+
+function securityHeaders(csp: string): Record<string, string> {
+  return Object.fromEntries(
+    REQUIRED_HEADERS.map((header) => [header, header === 'content-security-policy' ? csp : '1']),
+  );
+}
+
 const successfulResponse: FakeResponse = {
   status: 200,
-  headerNames: [...REQUIRED_HEADERS],
+  headers: securityHeaders(WEB_CSP),
   body: HEALTH_BODY,
+};
+
+const successfulDocsResponse: FakeResponse = {
+  status: 200,
+  headers: securityHeaders(DOCS_CSP),
+  body: '<!doctype html>',
 };
 
 const failingResponse: FakeResponse = {
   status: 500,
-  headerNames: [],
+  headers: {},
   body: 'error',
 };
 
@@ -216,19 +254,30 @@ const statusArb = fc.oneof(
   },
 );
 
-const headerNamesArb = fc
-  .oneof(
-    { weight: 3, arbitrary: fc.constant([...REQUIRED_HEADERS]) },
-    {
-      weight: 2,
-      arbitrary: fc
-        .constantFrom(...REQUIRED_HEADERS)
-        .map((dropped) => REQUIRED_HEADERS.filter((header) => header !== dropped)),
-    },
-    { weight: 1, arbitrary: fc.subarray([...REQUIRED_HEADERS]) },
-  )
-  .chain((names) =>
-    fc.boolean().map((upperCase) => names.map((name) => (upperCase ? name.toUpperCase() : name))),
+const headerNamesArb = fc.oneof(
+  { weight: 3, arbitrary: fc.constant([...REQUIRED_HEADERS]) },
+  {
+    weight: 2,
+    arbitrary: fc
+      .constantFrom(...REQUIRED_HEADERS)
+      .map((dropped) => REQUIRED_HEADERS.filter((header) => header !== dropped)),
+  },
+  { weight: 1, arbitrary: fc.subarray([...REQUIRED_HEADERS]) },
+);
+
+const headersArb: fc.Arbitrary<Record<string, string>> = fc
+  .record({
+    names: headerNamesArb,
+    upperCase: fc.boolean(),
+    csp: fc.constantFrom(...CSP_VALUES),
+  })
+  .map(({ names, upperCase, csp }) =>
+    Object.fromEntries(
+      [...names].map((name): [string, string] => [
+        upperCase ? name.toUpperCase() : name,
+        name === 'content-security-policy' ? csp : '1',
+      ]),
+    ),
   );
 
 const bodyArb = fc.oneof(
@@ -243,24 +292,17 @@ const bodyArb = fc.oneof(
   fc.string({ maxLength: 40 }),
 );
 
-const responseArb: fc.Arbitrary<FakeResponse> = fc.oneof(
-  {
-    weight: 2,
-    arbitrary: fc.record({
-      status: fc.constant(200),
-      headerNames: headerNamesArb,
-      body: bodyArb,
-    }),
-  },
-  {
-    weight: 1,
-    arbitrary: fc.record({ status: statusArb, headerNames: headerNamesArb, body: bodyArb }),
-  },
-);
+const responseArb: fc.Arbitrary<FakeResponse> = fc.record({
+  status: statusArb,
+  headers: headersArb,
+  body: bodyArb,
+});
 
 const planArb: fc.Arbitrary<Plan> = fc.record({
   root: fc.array(responseArb, { minLength: 1, maxLength: 6 }),
   health: fc.array(responseArb, { minLength: 1, maxLength: 6 }),
+  docs: fc.array(responseArb, { minLength: 1, maxLength: 6 }),
+  openapi: fc.array(responseArb, { minLength: 1, maxLength: 6 }),
 });
 
 /** Creates a throwaway self-signed certificate for 127.0.0.1 and returns the PEM contents. */
@@ -336,38 +378,96 @@ describe('scripts/smoke-test.sh', () => {
   }, 120_000);
 
   it('passes when a transient failure is followed by success', async () => {
-    const run = await runPlan({
-      root: [failingResponse, successfulResponse],
-      health: [successfulResponse],
-    });
+    const run = await runPlan(
+      passingPlan({ root: [failingResponse, successfulResponse], health: [successfulResponse] }),
+    );
 
     expect(run.exitCode).toBe(0);
-    expect(run.requests).toEqual({ [ROOT.path]: 2, [HEALTH.path]: 1 });
+    expect(run.requests).toEqual({
+      '/': 2,
+      '/api/v1/health': 1,
+      '/docs/': 1,
+      '/docs/openapi.json': 1,
+    });
     expect(run.stdout).toContain('OK: GET /');
     expect(run.stdout).toContain('OK: GET /api/v1/health');
+    expect(run.stdout).toContain('OK: GET /docs/');
+    expect(run.stdout).toContain('OK: GET /docs/openapi.json');
   });
 
   it('fails with exactly 5 requests when the root check never passes', async () => {
-    const run = await runPlan({ root: [failingResponse], health: [successfulResponse] });
+    const run = await runPlan(passingPlan({ root: [failingResponse] }));
 
     expect(run.exitCode).not.toBe(0);
     expect(run.stderr).toContain('FAILED: GET / status 500');
-    expect(run.requests).toEqual({ [ROOT.path]: MAX_ATTEMPTS, [HEALTH.path]: 0 });
+    expect(run.requests).toEqual({
+      '/': MAX_ATTEMPTS,
+      '/api/v1/health': 0,
+      '/docs/': 0,
+      '/docs/openapi.json': 0,
+    });
   });
 
   it('names the missing header in the failed health check', async () => {
     const withoutFrameOptions: FakeResponse = {
       ...successfulResponse,
-      headerNames: REQUIRED_HEADERS.filter((header) => header !== 'x-frame-options'),
+      headers: Object.fromEntries(
+        Object.entries(successfulResponse.headers).filter(([name]) => name !== 'x-frame-options'),
+      ),
     };
-    const run = await runPlan({
-      root: [successfulResponse],
-      health: [withoutFrameOptions],
-    });
+    const run = await runPlan(passingPlan({ health: [withoutFrameOptions] }));
 
     expect(run.exitCode).not.toBe(0);
     expect(run.stderr).toContain('FAILED: GET /api/v1/health missing header x-frame-options');
-    expect(run.requests).toEqual({ [ROOT.path]: 1, [HEALTH.path]: MAX_ATTEMPTS });
+    expect(run.requests).toEqual({
+      '/': 1,
+      '/api/v1/health': MAX_ATTEMPTS,
+      '/docs/': 0,
+      '/docs/openapi.json': 0,
+    });
+  });
+
+  it('fails when GET /api/v1/health does not answer 200', async () => {
+    const run = await runPlan(passingPlan({ health: [{ ...successfulResponse, status: 500 }] }));
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stderr).toContain('FAILED: GET /api/v1/health');
+    expect(run.requests).toEqual({
+      '/': 1,
+      '/api/v1/health': MAX_ATTEMPTS,
+      '/docs/': 0,
+      '/docs/openapi.json': 0,
+    });
+  });
+  it('fails the docs check when the CSP does not allow data: images', async () => {
+    const webPolicyOnDocs: FakeResponse = {
+      ...successfulDocsResponse,
+      headers: securityHeaders(WEB_CSP),
+    };
+    const run = await runPlan(passingPlan({ docs: [webPolicyOnDocs] }));
+
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stderr).toContain(
+      "FAILED: GET /docs/ content-security-policy without img-src 'self' data:",
+    );
+    expect(run.requests).toEqual({
+      '/': 1,
+      '/api/v1/health': 1,
+      '/docs/': MAX_ATTEMPTS,
+      '/docs/openapi.json': 0,
+    });
+  });
+
+  it('fails when the OpenAPI document does not answer 200', async () => {
+    const run = await runPlan(passingPlan({ openapi: [{ ...successfulResponse, status: 404 }] }));
+
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stderr).toContain('FAILED: GET /docs/openapi.json status 404');
+    expect(run.requests).toEqual({
+      '/': 1,
+      '/api/v1/health': 1,
+      '/docs/': 1,
+      '/docs/openapi.json': MAX_ATTEMPTS,
+    });
   });
 
   describe('https-only', () => {
@@ -383,7 +483,7 @@ describe('scripts/smoke-test.sh', () => {
     it.each(rejectedUrls)(
       'rejects a base URL with %s and sends no request',
       async (_label, url) => {
-        currentPlan = { root: [successfulResponse], health: [successfulResponse] };
+        currentPlan = passingPlan();
         received = {};
         const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-test-scheme-'));
         try {
@@ -398,7 +498,7 @@ describe('scripts/smoke-test.sh', () => {
       },
     );
     it('accepts an https base URL with a trailing slash', async () => {
-      currentPlan = { root: [successfulResponse], health: [successfulResponse] };
+      currentPlan = passingPlan();
       received = {};
       const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-test-slash-'));
       try {
@@ -426,7 +526,7 @@ describe('scripts/smoke-test.sh', () => {
       try {
         const mutantPath = path.join(workDir, 'mutant.sh');
         fs.writeFileSync(mutantPath, mutated);
-        currentPlan = { root: [successfulResponse], health: [successfulResponse] };
+        currentPlan = passingPlan();
         received = {};
         const run = await new Promise<ScriptResult>((resolve, reject) => {
           const child = spawn('bash', [mutantPath, plainHttpUrl()], {
