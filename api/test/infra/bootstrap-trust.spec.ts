@@ -6,8 +6,8 @@ import { admits, parseTrustPolicy, RepositoryVariables } from './helpers/trust-p
 const BOOTSTRAP_DIR = path.resolve(__dirname, '../../../infra/bootstrap');
 const OWNER = 'salgado-2022';
 const OWNER_ID = '109880782';
-const REPO = 'card-checkout-store';
-const REPO_ID = '1473672119';
+const REPO = 'card-checkout-store-v1';
+const REPO_ID = '1474536349';
 // GitHub emits the immutable subject with owner and repository ids.
 const MASTER_SUB = `repo:${OWNER}@${OWNER_ID}/${REPO}@${REPO_ID}:ref:refs/heads/master`;
 const PRODUCTION_SUB = `repo:${OWNER}@${OWNER_ID}/${REPO}@${REPO_ID}:environment:production`;

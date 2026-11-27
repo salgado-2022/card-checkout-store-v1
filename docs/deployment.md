@@ -16,7 +16,7 @@ plan -> apply -> deploy-api -> deploy-web -> smoke-test
 - AWS CLI v2.
 - Terraform 1.10 or later (the remote state uses the S3 lockfile, `use_lockfile = true`). The `deploy` workflow pins Terraform 1.15.6, so use that version locally to get the same plan.
 - The GitHub OIDC identity provider (`token.actions.githubusercontent.com`, audience `sts.amazonaws.com`) already present in the AWS account. The bootstrap does not create, import or read it: the trust policy builds its ARN from the account id.
-- A GitHub repository (this project uses `salgado-2022/card-checkout-store`) with permission to manage environments and Actions variables, and `master` as the default branch. The OIDC trust policy names the `master` branch.
+- A GitHub repository (this project uses `salgado-2022/card-checkout-store-v1`) with permission to manage environments and Actions variables, and `master` as the default branch. The OIDC trust policy names the `master` branch.
 - Payment sandbox credentials from the payment provider: the public key, the private key, the integrity secret and the events secret, plus the sandbox API base URL.
 - A project name for resource names and SSM paths. This guide uses the default `card-checkout-store`. Use the same value in the bootstrap and in `infra/` (`project_name`).
 
